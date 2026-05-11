@@ -1,0 +1,5 @@
+# Полный набор зависимостей курса.
+# Для первых трех занятий достаточно:
+# pip install -r requirements-base.txt
+-r requirements-base.txt
+-r requirements-extended.txt
