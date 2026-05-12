@@ -196,6 +196,8 @@ def _read_ts_archive(path: Path, split_name: str, max_rows: int) -> pd.DataFrame
                 "target_temperature_c": target_temperature_c,
             }
             for channel_index, values in enumerate(channels):
+                if values.size == 0:
+                    continue
                 prefix = f"channel_{channel_index:02d}"
                 record[f"{prefix}_mean"] = float(values.mean())
                 record[f"{prefix}_std"] = float(values.std(ddof=0))
@@ -242,13 +244,13 @@ def prepare_zenodo_motor_temperature() -> bool:
         "channel_05_mean",
         "channel_00_trend",
         "channel_01_trend",
-        "target_temperature_c",
         "is_allowed",
     ]
     diagnostics_columns = [
         "sample_id",
         "source_split",
         "source_row_index",
+        "target_temperature_c",
         "channel_00_std",
         "channel_01_std",
         "channel_02_std",
@@ -302,12 +304,16 @@ def prepare_zenodo_pmsm_inverter_fault() -> bool:
 
     raw = pd.read_csv(source)
     raw = raw.dropna(subset=["Ia_original", "Ib_original", "VDC", "IDC", "T1", "T2", "T3", "FDD"]).copy()
-    raw["profile_id"] = raw["FDD"].astype("category").cat.codes + 1
-    df = _compact_by_profile(raw, "profile_id", max_rows=12_000)
+    raw["fault_group_id"] = raw["FDD"].astype("category").cat.codes + 1
+    df = _compact_by_profile(raw, "fault_group_id", max_rows=12_000)
     df = df.reset_index(drop=True)
+    df["profile_id"] = (
+        df["fault_group_id"].astype(int) * 1_000
+        + df.groupby("fault_group_id").cumcount() // 250
+        + 1
+    )
     sample_id = np.arange(1, len(df) + 1)
     omega_rad_s = 10.0
-    speed_rpm = omega_rad_s * 60.0 / (2.0 * np.pi)
     current_a = np.sqrt(df["Ia_original"] ** 2 + df["Ib_original"] ** 2)
     voltage_v = df["VDC"].abs()
     temperature_c = df[["T1", "T2", "T3"]].mean(axis=1)
@@ -319,19 +325,17 @@ def prepare_zenodo_pmsm_inverter_fault() -> bool:
             "sample_id": sample_id,
             "profile_id": df["profile_id"].astype(int),
             "time_index": df["Timestamp"],
-            "speed_rpm": speed_rpm,
             "torque_proxy_nm": torque_proxy_nm,
             "voltage_v": voltage_v,
             "current_a": current_a,
-            "ambient_temp_c": 25.0,
             "temperature_c": temperature_c,
-            "max_bridge_temp_c": df[["T1", "T2", "T3"]].max(axis=1),
             "is_allowed": is_allowed,
         }
     )
     diagnostics = pd.DataFrame(
         {
             "sample_id": sample_id,
+            "max_bridge_temp_c": df[["T1", "T2", "T3"]].max(axis=1),
             "fault_code": df["FDD"].astype(str),
             "fault_label": np.where(is_allowed == 1, "normal_operation", "fault_condition"),
             "T1": df["T1"],
@@ -355,7 +359,8 @@ def prepare_zenodo_pmsm_inverter_fault() -> bool:
         extra=[
             "Целевая переменная регрессии: `max_bridge_temp_c`.",
             "Целевая переменная классификации: `is_allowed`, где `F0` трактуется как нормальная работа.",
-            "`torque_proxy_nm` является расчетным прокси-показателем, полученным из `Power_AC` и фиксированной скорости 10 рад/с.",
+            "`torque_proxy_nm` является расчетным прокси-показателем, полученным из `Power_AC` и фиксированной угловой скорости 10 рад/с; сама скорость не включена в feature-CSV, так как в источнике она не изменяется.",
+            "`profile_id` сформирован как сегмент внутри кода отказа, чтобы групповое тестирование включало нормальные и отказные режимы.",
         ],
     )
     return True
@@ -381,12 +386,30 @@ def prepare_mendeley_ev_powertrain_efficiency() -> bool:
             "Drivetrain_efficiency_gear_SG",
         ]
     ).copy()
-    raw["profile_id"] = raw["Date"].astype("category").cat.codes + 1
-    df = _compact_by_profile(raw, "profile_id", max_rows=15_000)
-    df = df.reset_index(drop=True)
+    raw["motor_efficiency_clipped"] = raw["Motor_efficiency_gear_SG"].clip(lower=0.0, upper=1.0)
+    non_plateau = raw[raw["motor_efficiency_clipped"] < 0.995]
+    plateau = raw[raw["motor_efficiency_clipped"] >= 0.995]
+    rng = np.random.default_rng(RANDOM_STATE)
+    non_plateau_sample = non_plateau.sample(
+        n=min(len(non_plateau), 7_000),
+        random_state=int(rng.integers(0, 1_000_000)),
+    )
+    plateau_sample = plateau.sample(
+        n=min(len(plateau), 5_000),
+        random_state=int(rng.integers(0, 1_000_000)),
+    )
+    df = (
+        pd.concat([non_plateau_sample, plateau_sample], axis=0)
+        .sort_values(["Date", "DateTime"])
+        .reset_index(drop=True)
+    )
+    date_code = (df["Date"].astype("category").cat.codes + 1).astype(int)
+    segment_id = df.groupby("Date").cumcount() // 500
+    df["profile_id"] = (date_code * 1_000 + segment_id + 1).astype(int)
     sample_id = np.arange(1, len(df) + 1)
-    efficiency = df["Drivetrain_efficiency_gear_SG"].clip(lower=0.0, upper=1.0)
-    efficiency_limit = efficiency.quantile(0.30)
+    motor_efficiency = df["motor_efficiency_clipped"]
+    drivetrain_efficiency = df["Drivetrain_efficiency_gear_SG"].clip(lower=0.0, upper=1.0)
+    efficiency_limit = motor_efficiency.quantile(0.25)
     omega = 2.0 * np.pi * df["Motor_rpm_gear_SG"].abs() / 60.0
     mechanical_power_w = df["Motor_torque_gear_SG"].abs() * omega
 
@@ -400,14 +423,14 @@ def prepare_mendeley_ev_powertrain_efficiency() -> bool:
             "slope_rad": df["Slope Angle (rad)"],
             "motor_speed_rpm": df["Motor_rpm_gear_SG"],
             "motor_torque_nm": df["Motor_torque_gear_SG"],
-            "motor_efficiency": df["Motor_efficiency_gear_SG"],
-            "drivetrain_efficiency": efficiency,
-            "is_allowed": (efficiency >= efficiency_limit).astype(int),
+            "is_allowed": (motor_efficiency >= efficiency_limit).astype(int),
         }
     )
     diagnostics = pd.DataFrame(
         {
             "sample_id": sample_id,
+            "motor_efficiency": motor_efficiency,
+            "drivetrain_efficiency": drivetrain_efficiency,
             "Date": df["Date"],
             "DateTime": df["DateTime"],
             "Latitude": df["Latitude"],
@@ -416,7 +439,7 @@ def prepare_mendeley_ev_powertrain_efficiency() -> bool:
             "mechanical_power_w": mechanical_power_w,
             "Powertrain_efficiency_gear_SG": df["Powertrain_efficiency_gear_SG"],
             "efficiency_limit": efficiency_limit,
-            "class_label": np.where(efficiency >= efficiency_limit, "acceptable_efficiency", "low_efficiency"),
+            "class_label": np.where(motor_efficiency >= efficiency_limit, "acceptable_efficiency", "low_efficiency"),
         }
     )
     features.round(6).to_csv(dataset.features_file, index=False)
@@ -426,9 +449,10 @@ def prepare_mendeley_ev_powertrain_efficiency() -> bool:
         status="prepared",
         rows=len(features),
         extra=[
-            "Целевая переменная регрессии: `drivetrain_efficiency`.",
-            "Целевая переменная классификации: `is_allowed`, производная от нижнего квантиля КПД.",
-            "Для проверки качества используется разбиение по датам поездок, а не случайное перемешивание соседних точек траектории.",
+            "Целевая переменная регрессии: `motor_efficiency`, вынесенная в diagnostics-CSV для защиты feature-CSV от прокси-утечки.",
+            "Целевая переменная классификации: `is_allowed`, производная от нижнего квартиля `motor_efficiency`.",
+            "Компактная выборка намеренно переобогащена точками с `motor_efficiency < 0.995`, чтобы регрессионная задача не вырождалась в прогноз почти постоянной величины.",
+            "Для проверки качества используется разбиение по временным сегментам поездок, а не случайное перемешивание соседних точек траектории.",
         ],
     )
     return True

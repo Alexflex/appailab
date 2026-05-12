@@ -1255,7 +1255,7 @@ def _dataset_metadata_text() -> str:
 2. `input_power_w = voltage_v * current_a`;
 3. `efficiency = output_power_w / input_power_w`;
 4. `loss_power_w = input_power_w - output_power_w`;
-4. температура обмотки увеличивается при росте потерь и тока.
+5. температура обмотки увеличивается при росте потерь и тока.
 
 Открытые реальные ориентиры для структуры признаков: Zenodo
 `ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
@@ -1326,6 +1326,12 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
 использовать diagnostics-CSV как автоматический вход модели без отдельного
 обоснования, поскольку в нем могут находиться производные признаки,
 раскрывающие способ расчета целевой переменной.
+
+Внешние feature-CSV намеренно не содержат целевые или прокси-целевые
+столбцы, такие как `target_temperature_c`, `motor_efficiency`,
+`drivetrain_efficiency` и `max_bridge_temp_c`. Эти величины хранятся в
+diagnostics-CSV и присоединяются в блокнотах только для постановки цели,
+интерпретации ошибок и демонстрации утечки данных.
 
 ## Ограничения применимости
 

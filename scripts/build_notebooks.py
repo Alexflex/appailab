@@ -1077,12 +1077,48 @@ plt.show()
 clean_df = df.copy()
 
 # Пропуски заменяются только в первичных измеряемых столбцах.
-# Расчетные энергетические величины после этого пересчитываются по формулам,
-# чтобы не нарушать физический баланс таблицы.
+# Для torque_nm и current_a используется физически ограниченная медианная
+# замена: восстановленное значение не должно приводить к КПД больше единицы.
+# Это не делает восстановленные строки "истинными измерениями", но сохраняет
+# базовые энергетические ограничения учебной таблицы.
 primary_imputation_columns = ["torque_nm", "current_a", "temperature_c"]
 
-for column in primary_imputation_columns:
-    clean_df[column] = clean_df[column].fillna(clean_df[column].median())
+original_missing = df[primary_imputation_columns].isna()
+target_max_efficiency_after_imputation = 0.98
+
+clean_df["temperature_c"] = clean_df["temperature_c"].fillna(clean_df["temperature_c"].median())
+
+omega_rad_s_initial = 2.0 * np.pi * clean_df["speed_rpm"] / 60.0
+median_torque = clean_df["torque_nm"].median()
+median_current = clean_df["current_a"].median()
+
+torque_missing_mask = clean_df["torque_nm"].isna()
+if torque_missing_mask.any():
+    torque_physical_cap = (
+        target_max_efficiency_after_imputation
+        * clean_df.loc[torque_missing_mask, "voltage_v"]
+        * clean_df.loc[torque_missing_mask, "current_a"].fillna(median_current)
+        / omega_rad_s_initial.loc[torque_missing_mask]
+    )
+    clean_df.loc[torque_missing_mask, "torque_nm"] = np.minimum(
+        median_torque,
+        torque_physical_cap,
+    )
+
+current_missing_mask = clean_df["current_a"].isna()
+if current_missing_mask.any():
+    output_power_for_current = clean_df.loc[current_missing_mask, "torque_nm"] * omega_rad_s_initial.loc[current_missing_mask]
+    current_physical_floor = (
+        output_power_for_current
+        / (
+            target_max_efficiency_after_imputation
+            * clean_df.loc[current_missing_mask, "voltage_v"]
+        )
+    )
+    clean_df.loc[current_missing_mask, "current_a"] = np.maximum(
+        median_current,
+        current_physical_floor,
+    )
 
 omega_rad_s = 2.0 * np.pi * clean_df["speed_rpm"] / 60.0
 clean_df["output_power_w"] = clean_df["torque_nm"] * omega_rad_s
@@ -1092,6 +1128,28 @@ clean_df["efficiency"] = clean_df["output_power_w"] / input_power_w
 
 print("Число пропусков после обработки и пересчета:", int(clean_df.isna().sum().sum()))
 clean_df[feature_columns + [target_column]].corr(numeric_only=True)[target_column].sort_values(ascending=False)
+"""),
+        code("""
+imputation_audit = pd.DataFrame(
+    {
+        "column": primary_imputation_columns,
+        "missing_before": [int(original_missing[column].sum()) for column in primary_imputation_columns],
+        "missing_after": [int(clean_df[column].isna().sum()) for column in primary_imputation_columns],
+    }
+)
+imputation_audit["method"] = [
+    "медиана с физическим ограничением КПД",
+    "медиана с физическим ограничением КПД",
+    "медиана",
+]
+imputation_audit
+"""),
+        md("""
+Физически ограниченная медианная замена отличается от простой медианной
+замены тем, что восстановленные `torque_nm` и `current_a` дополнительно
+проверяются по неравенству `efficiency <= 0.98`. Без такого ограничения
+отдельные строки могут получить КПД больше единицы, потому что медианный
+момент и медианный ток взяты из разных режимов работы.
 """),
         code("""
 clean_balance_df = clean_df.copy()
@@ -1292,8 +1350,9 @@ experiment_alpha = 1.0
 
 experiment_model = Pipeline(
     steps=[
+        ("input_scaler", StandardScaler()),
         ("polynomial_features", PolynomialFeatures(degree=experiment_degree, include_bias=False)),
-        ("scaler", StandardScaler()),
+        ("polynomial_scaler", StandardScaler()),
         ("model", Ridge(alpha=experiment_alpha)),
     ]
 )
@@ -1315,8 +1374,9 @@ if experiment_degree is None or experiment_alpha is None:
 
 experiment_model = Pipeline(
     steps=[
+        ("input_scaler", StandardScaler()),
         ("polynomial_features", PolynomialFeatures(degree=experiment_degree, include_bias=False)),
-        ("scaler", StandardScaler()),
+        ("polynomial_scaler", StandardScaler()),
         ("model", Ridge(alpha=experiment_alpha)),
     ]
 )
@@ -1636,8 +1696,9 @@ linear_model = Pipeline(
 
 polynomial_ridge_model = Pipeline(
     steps=[
+        ("input_scaler", StandardScaler()),
         ("polynomial_features", PolynomialFeatures(degree=2, include_bias=False)),
-        ("scaler", StandardScaler()),
+        ("polynomial_scaler", StandardScaler()),
         ("model", Ridge(alpha=1.0)),
     ]
 )
@@ -1793,8 +1854,9 @@ leakage_X_test = leakage_X.loc[X_test.index]
 
 leakage_demo_model = Pipeline(
     steps=[
+        ("input_scaler", StandardScaler()),
         ("polynomial_features", PolynomialFeatures(degree=2, include_bias=False)),
-        ("scaler", StandardScaler()),
+        ("polynomial_scaler", StandardScaler()),
         ("model", Ridge(alpha=1.0)),
     ]
 )
@@ -1929,8 +1991,9 @@ complexity_rows = []
 for degree in [1, 2, 3, 4]:
     model = Pipeline(
         steps=[
+            ("input_scaler", StandardScaler()),
             ("polynomial_features", PolynomialFeatures(degree=degree, include_bias=False)),
-            ("scaler", StandardScaler()),
+            ("polynomial_scaler", StandardScaler()),
             ("model", Ridge(alpha=1.0)),
         ]
     )

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import nbformat
 import numpy as np
@@ -59,6 +60,24 @@ EXTERNAL_DATASETS = {
     "zenodo_pmsm_inverter_fault",
     "mendeley_ev_powertrain_efficiency",
 }
+EXTERNAL_FORBIDDEN_FEATURE_COLUMNS = {
+    "zenodo_motor_temperature": {"target_temperature_c", "thermal_limit_target_temperature_c"},
+    "zenodo_pmsm_inverter_fault": {
+        "max_bridge_temp_c",
+        "fault_code",
+        "fault_label",
+        "Current_Imbalance",
+        "Temp_Diff_Max",
+    },
+    "mendeley_ev_powertrain_efficiency": {
+        "motor_efficiency",
+        "drivetrain_efficiency",
+        "Powertrain_efficiency_gear_SG",
+        "mechanical_power_w",
+        "efficiency_limit",
+        "class_label",
+    },
+}
 READY_DATASET_IDS = {
     "zenodo_motor_temperature",
     "pmsm_inverter_fault_zenodo",
@@ -89,10 +108,30 @@ def _check_practice_01() -> None:
     assert relative_error.max() < 1e-3, f"Исходный энергобаланс нарушен: {relative_error.max():.6f}"
 
     clean_df = df.copy()
-    for column in ["torque_nm", "current_a", "temperature_c"]:
-        clean_df[column] = clean_df[column].fillna(clean_df[column].median())
-
+    clean_df["temperature_c"] = clean_df["temperature_c"].fillna(clean_df["temperature_c"].median())
     omega_rad_s = 2.0 * np.pi * clean_df["speed_rpm"] / 60.0
+    median_torque = clean_df["torque_nm"].median()
+    median_current = clean_df["current_a"].median()
+    target_max_efficiency = 0.98
+
+    torque_missing_mask = clean_df["torque_nm"].isna()
+    if torque_missing_mask.any():
+        torque_cap = (
+            target_max_efficiency
+            * clean_df.loc[torque_missing_mask, "voltage_v"]
+            * clean_df.loc[torque_missing_mask, "current_a"].fillna(median_current)
+            / omega_rad_s.loc[torque_missing_mask]
+        )
+        clean_df.loc[torque_missing_mask, "torque_nm"] = np.minimum(median_torque, torque_cap)
+
+    current_missing_mask = clean_df["current_a"].isna()
+    if current_missing_mask.any():
+        output_power = clean_df.loc[current_missing_mask, "torque_nm"] * omega_rad_s.loc[current_missing_mask]
+        current_floor = output_power / (
+            target_max_efficiency * clean_df.loc[current_missing_mask, "voltage_v"]
+        )
+        clean_df.loc[current_missing_mask, "current_a"] = np.maximum(median_current, current_floor)
+
     clean_df["output_power_w"] = clean_df["torque_nm"] * omega_rad_s
     input_power_w = clean_df["voltage_v"] * clean_df["current_a"]
     clean_df["loss_power_w"] = input_power_w - clean_df["output_power_w"]
@@ -105,6 +144,7 @@ def _check_practice_01() -> None:
     )
     assert after_error.max() < 1e-12, f"Энергобаланс после очистки нарушен: {after_error.max():.6f}"
     assert int(clean_df.isna().sum().sum()) == 0, "После очистки занятия 1 остались пропуски."
+    assert clean_df["efficiency"].between(0, 1).all(), "После очистки занятия 1 КПД вышел за [0, 1]."
 
 
 def _check_practice_02() -> None:
@@ -207,6 +247,7 @@ def _check_external_datasets() -> None:
         assert metadata_path.exists(), f"Не найден metadata-файл: {metadata_path}"
         features = pd.read_csv(features_path)
         diagnostics = pd.read_csv(diagnostics_path)
+        dataset_id = row["dataset_id"]
         assert len(features) >= 1_000, f"Слишком малая внешняя выборка: {features_path.name}"
         assert len(features) == len(diagnostics), (
             f"Размеры feature-CSV и diagnostics-CSV различаются: {features_path.name}"
@@ -217,6 +258,39 @@ def _check_external_datasets() -> None:
         assert features["is_allowed"].nunique() == 2, (
             f"Во внешней классификационной цели нет двух классов: {features_path.name}"
         )
+        forbidden = EXTERNAL_FORBIDDEN_FEATURE_COLUMNS.get(dataset_id, set())
+        forbidden_in_features = forbidden.intersection(features.columns)
+        assert not forbidden_in_features, (
+            f"В feature-CSV внешнего набора попали запрещенные столбцы {features_path.name}: "
+            f"{sorted(forbidden_in_features)}"
+        )
+        numeric_columns = [
+            column
+            for column in features.select_dtypes(include=[np.number]).columns
+            if column != "sample_id"
+        ]
+        constant_columns = [
+            column
+            for column in numeric_columns
+            if features[column].nunique(dropna=False) <= 1
+        ]
+        assert not constant_columns, (
+            f"В feature-CSV найдены константные числовые столбцы {features_path.name}: "
+            f"{constant_columns}"
+        )
+        if "profile_id" in features.columns:
+            train_idx, test_idx = _external_group_holdout_indices(
+                features,
+                group_column="profile_id",
+                target_column="is_allowed",
+                test_share=0.25,
+            )
+            assert features.loc[train_idx, "is_allowed"].nunique() == 2, (
+                f"Групповая train-выборка содержит не оба класса: {features_path.name}"
+            )
+            assert features.loc[test_idx, "is_allowed"].nunique() == 2, (
+                f"Групповая test-выборка содержит не оба класса: {features_path.name}"
+            )
         duplicated_after_merge = (set(features.columns) & set(diagnostics.columns)) - {"sample_id"}
         assert not duplicated_after_merge, (
             "Feature-CSV и diagnostics-CSV имеют дублирующиеся столбцы, "
@@ -232,6 +306,34 @@ def _check_external_datasets() -> None:
     )
 
 
+def _external_group_holdout_indices(
+    data: pd.DataFrame,
+    group_column: str,
+    target_column: str,
+    test_share: float = 0.25,
+) -> tuple[pd.Index, pd.Index]:
+    groups = np.array(sorted(data[group_column].dropna().unique()))
+    test_count = max(1, int(np.ceil(len(groups) * test_share)))
+    test_groups = groups[-test_count:]
+    test_mask = data[group_column].isin(test_groups)
+    train_idx = data.index[~test_mask]
+    test_idx = data.index[test_mask]
+    if (
+        data.loc[train_idx, target_column].nunique() >= 2
+        and data.loc[test_idx, target_column].nunique() >= 2
+    ):
+        return train_idx, test_idx
+
+    selected_groups = []
+    for class_value in sorted(data[target_column].dropna().unique()):
+        class_groups = np.array(sorted(data.loc[data[target_column] == class_value, group_column].dropna().unique()))
+        class_test_count = max(1, int(np.ceil(len(class_groups) * test_share)))
+        selected_groups.extend(class_groups[-class_test_count:].tolist())
+    test_groups = np.array(sorted(set(selected_groups)))
+    test_mask = data[group_column].isin(test_groups)
+    return data.index[~test_mask], data.index[test_mask]
+
+
 def _check_external_notebooks() -> None:
     student_paths = sorted(NOTEBOOKS_EXTERNAL_STUDENT.glob("*.ipynb"))
     teacher_paths = sorted(NOTEBOOKS_EXTERNAL_TEACHER.glob("*.ipynb"))
@@ -244,9 +346,17 @@ def _check_external_notebooks() -> None:
     for path in student_paths:
         notebook = nbformat.read(path, as_version=4)
         notebook_source = "\n".join(str(cell.get("source", "")) for cell in notebook.cells)
+        if path.name.startswith("01_"):
+            assert "compact_numeric_profile" in notebook_source and "plot_missingness" in notebook_source, (
+                f"Во внешнем блокноте занятия 1 нет расширенного аудита данных: {path.name}"
+            )
         if path.name.startswith(("02_", "03_")):
             assert "forbidden_" in notebook_source and "Обнаружена утечка данных" in notebook_source, (
                 f"Во внешнем студенческом блокноте нет программной защиты от утечки: {path.name}"
+            )
+        if path.name.startswith("02_"):
+            assert "split_comparison" in notebook_source and "grid_metrics" in notebook_source, (
+                f"Во внешнем блокноте занятия 2 нет сравнения разбиений или сетки экспериментов: {path.name}"
             )
         if path.name.startswith("03_"):
             assert "depth_metrics_df" in notebook_source, (
@@ -254,6 +364,9 @@ def _check_external_notebooks() -> None:
             )
             assert "error_summary" in notebook_source, (
                 f"Во внешнем блокноте занятия 3 нет анализа ошибок по диагностическим меткам: {path.name}"
+            )
+            assert "threshold_metrics" in notebook_source and "split_metrics" in notebook_source, (
+                f"Во внешнем блокноте занятия 3 нет анализа порога решения или сравнения разбиений: {path.name}"
             )
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
@@ -267,6 +380,15 @@ def _check_external_notebooks() -> None:
         notebook = nbformat.read(path, as_version=4)
         output_count = sum(len(cell.get("outputs", [])) for cell in notebook.cells if cell.cell_type == "code")
         assert output_count > 0, f"Преподавательский внешний блокнот не выполнен: {path.name}"
+        for cell_index, cell in enumerate(notebook.cells):
+            if cell.cell_type != "code":
+                continue
+            for output in cell.get("outputs", []):
+                text = "".join(output.get("text", [])) if "text" in output else ""
+                assert not re.search(r"\{[a-zA-Z_][^{}\n]{0,80}\}", text), (
+                    f"В выводе преподавательского блокнота найден невычисленный шаблон: "
+                    f"{path.name}, cell {cell_index}"
+                )
 
 
 def main() -> None:
