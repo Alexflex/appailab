@@ -245,6 +245,7 @@ all_datasets_view = dataset_catalog[
         "size_note",
         "lessons",
         "risk_level",
+        "implementation_status",
     ]
 ]
 all_datasets_view
@@ -280,6 +281,7 @@ lesson_assignments[
     [
         "assignment_id",
         "assignment_title",
+        "implementation_status",
         "dataset_structure",
         "minimum_working_subset",
         "target_rule",
@@ -311,7 +313,7 @@ def source_section() -> str:
     return """
 ## Источники и проверка актуальности
 
-1. Electric Motor Temperature - открытый набор данных измерений постоянно-магнитной синхронной машины на стенде Paderborn University LEA Department. Используется как реальный ориентир структуры признаков. URL: https://www.kaggle.com/datasets/wkirgsn/electric-motor-temperature
+1. ElectricMotorTemperature, Zenodo TSML Archive - открытый набор многомерных временных рядов для регрессии температуры электродвигателя. Используется как реальный ориентир структуры временных признаков. URL: https://zenodo.org/records/11235562
 2. IEC 60034-1:2026. Rotating electrical machines - Part 1: Rating and performance. Используется как нормативный ориентир терминологии вращающихся электрических машин. URL: https://webstore.iec.ch/en/publication/89961
 3. IEC 60034-2-1:2024. Rotating electrical machines - Part 2-1: Standard methods for determining losses and efficiency from tests. Используется как нормативный ориентир по потерям и КПД. URL: https://webstore.iec.ch/en/publication/67756
 4. Документация pandas по пропущенным данным. URL: https://pandas.pydata.org/pandas-docs/stable/user_guide/missing_data.html
@@ -329,17 +331,15 @@ def datasets_for_lessons_01_02_section() -> str:
 в аудитории. При расширении работы его целесообразно сопоставлять с реальными
 открытыми наборами данных:
 
-1. Electric Motor Temperature, Kaggle. URL:
-   https://www.kaggle.com/datasets/wkirgsn/electric-motor-temperature.
-   Набор содержит реальные стендовые
-   измерения постоянно-магнитной синхронной машины (Permanent Magnet
-   Synchronous Motor, PMSM) Paderborn University LEA Department: скорость,
-   момент, токи и напряжения в d-q координатах, температуры статора,
-   постоянных магнитов, охлаждающей среды и окружающей среды. Применение:
-   первичный анализ данных, регрессия температур, обсуждение временной
-   автокорреляции. Ограничение: требуется Kaggle-доступ; при обучении нельзя
-   случайно перемешивать соседние временные точки без обсуждения утечки
-   информации между профилями.
+1. ElectricMotorTemperature, Zenodo TSML Archive. URL:
+   https://zenodo.org/records/11235562. Набор содержит открытые
+   многомерные временные ряды (multivariate time series, многоканальные
+   временные последовательности) для регрессии температуры электродвигателя.
+   Применение: первичный анализ данных, регрессия температуры, обсуждение
+   временной автокорреляции и группового разбиения. Ограничение: исходный
+   формат `.ts` не содержит физических имен каналов, поэтому признаки в
+   учебной таблице обозначаются нейтрально: `channel_00_mean`,
+   `channel_01_mean` и далее.
 2. Zenodo PMSM inverter fault diagnosis. URL:
    https://zenodo.org/records/14482932. Компактный набор измерений
    PMSM-инвертора с режимами отказов, фазными токами, напряжением
@@ -689,8 +689,8 @@ base_dataset_passport = pd.DataFrame(
             "Расчетные величины",
             "Служебные поля",
             "Учебные дефекты качества",
-        "Ограничение применимости",
-        "Энергетический баланс",
+            "Ограничение применимости",
+            "Энергетический баланс",
         ],
         "value": [
             DATA_FILE.name,
@@ -1035,6 +1035,22 @@ plt.show()
 Для учебной задачи применим медианную замену пропусков. Медиана менее
 чувствительна к выбросам, чем среднее арифметическое. В реальной работе
 выбор метода обработки пропусков должен быть обоснован причиной их появления.
+"""),
+        md("""
+## Предупреждение о пересчете целевой переменной
+
+Пропуски в исходной таблице внесены после расчета производных энергетических
+величин. Поэтому в отдельных строках может сохраняться `output_power_w`, хотя
+соответствующий первичный столбец `torque_nm` содержит пропуск. Это намеренный
+учебный артефакт: студент должен обнаружить, что физический баланс нельзя
+проверять механически без анализа происхождения столбцов.
+
+После медианной замены первичных величин `torque_nm`, `current_a` и
+`temperature_c` значения `output_power_w`, `loss_power_w` и `efficiency`
+пересчитываются заново. Следовательно, часть значений `efficiency` в
+`clean_df` получена не из исходных измерений, а из восстановленных медианой
+значений. Такую таблицу допустимо использовать для демонстрации очистки
+данных, но нельзя без пояснений переносить в регрессионную задачу занятия 2.
 """),
         md("""
 ## Протокол преобразования данных
@@ -2759,12 +2775,58 @@ dangerous_error_mask = (y_test == 0) & (y_pred == 1)
 dangerous_errors = X_test.loc[dangerous_error_mask].copy()
 dangerous_errors["true_class"] = y_test.loc[dangerous_error_mask]
 dangerous_errors["predicted_class"] = y_pred[dangerous_error_mask.to_numpy()]
+dangerous_indices = y_test.index[dangerous_error_mask]
+diagnostic_columns_for_errors = [
+    "sample_id",
+    "mode_label",
+    "overcurrent",
+    "overheating",
+    "overspeed",
+    "low_efficiency",
+    "torque_violation",
+    "violation_count",
+]
+dangerous_diagnostics = full_df.loc[dangerous_indices, diagnostic_columns_for_errors]
+dangerous_errors = dangerous_diagnostics.join(dangerous_errors)
 
 print(
     "Число опасных ошибок, при которых недопустимый режим признан допустимым:",
     len(dangerous_errors),
 )
 dangerous_errors.head()
+"""),
+        md("""
+## Информационная полнота признаков
+
+Информационная полнота признакового пространства означает, что выбранные
+признаки содержат достаточно сведений для различения всех важных классов. В
+строгой модели занятия 3 намеренно исключены `efficiency` и `output_power_w`,
+поскольку они прямо раскрывают правило `low_efficiency`. Это защищает модель
+от утечки данных, но одновременно ухудшает обнаружение части режимов с низким
+КПД.
+
+Следующая таблица показывает, какие причины недопустимости модель пропускает
+чаще всего. Если recall для `low_efficiency` мал, это не является ошибкой
+библиотеки или дерева решений. Это следствие компромисса между защитой от
+утечки данных и разрешающей способностью признакового пространства.
+"""),
+        code("""
+test_error_analysis = full_df.loc[y_test.index, diagnostic_columns_for_errors].copy()
+test_error_analysis["true_class"] = y_test
+test_error_analysis["predicted_class"] = y_pred
+
+not_allowed_by_mode = (
+    test_error_analysis[test_error_analysis["true_class"] == 0]
+    .groupby("mode_label")
+    .agg(
+        test_count=("mode_label", "size"),
+        missed_as_allowed=("predicted_class", lambda values: int((values == 1).sum())),
+    )
+)
+not_allowed_by_mode["recall_not_allowed"] = (
+    1.0 - not_allowed_by_mode["missed_as_allowed"] / not_allowed_by_mode["test_count"]
+)
+not_allowed_by_mode.sort_values(["recall_not_allowed", "test_count"], ascending=[True, False])
 """),
         md("""
 ## Интерпретация дерева

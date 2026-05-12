@@ -558,18 +558,18 @@ def dataset_catalog() -> pd.DataFrame:
 
     rows = [
         {
-            "dataset_id": "electric_motor_temperature",
-            "name": "Electric Motor Temperature",
-            "url": "https://www.kaggle.com/datasets/wkirgsn/electric-motor-temperature",
-            "object": "постоянно-магнитная синхронная машина (Permanent Magnet Synchronous Motor, PMSM) на испытательном стенде",
-            "license": "CC BY-SA 4.0",
-            "access": "Kaggle, требуется учетная запись или API-токен",
-            "size_note": "185 часов, 2 Гц, 1 330 816 строк, 13 столбцов",
-            "format_note": "CSV",
+            "dataset_id": "zenodo_motor_temperature",
+            "name": "ElectricMotorTemperature",
+            "url": "https://zenodo.org/records/11235562",
+            "object": "электродвигатель, представленный многомерными временными рядами (multivariate time series)",
+            "license": "CC BY 4.0",
+            "access": "прямая загрузка Zenodo",
+            "size_note": "TRAIN около 104 МБ, TEST около 45 МБ; фрагменты длиной 60 отсчетов",
+            "format_note": "TSML .ts",
             "lessons": "1,2,3",
-            "base_usage": "основной реальный ориентир; в базовом занятии используется как источник структуры признаков",
+            "base_usage": "реализованный внешний блокнот; используется для анализа временных признаков и регрессии температуры",
             "risk_level": "средний",
-            "risk_note": "временная автокорреляция; требуется разбиение по profile_id; лицензия ShareAlike",
+            "risk_note": "физические имена каналов в архиве не заданы; требуется групповое разбиение по profile_id",
         },
         {
             "dataset_id": "pmsm_inverter_fault_zenodo",
@@ -909,16 +909,23 @@ def dataset_catalog() -> pd.DataFrame:
         },
     ]
 
-    return pd.DataFrame(rows)
+    implementation_status = {
+        "zenodo_motor_temperature": "external_notebook_ready",
+        "pmsm_inverter_fault_zenodo": "external_notebook_ready",
+        "ev_powertrain_efficiency": "external_notebook_ready",
+    }
+    result = pd.DataFrame(rows)
+    result["implementation_status"] = result["dataset_id"].map(implementation_status).fillna("methodology_only")
+    return result
 
 
 def _minimum_working_subset(dataset_id: str, format_note: str, size_note: str) -> str:
     """Вернуть конкретное ограничение объема для аудиторной работы."""
 
     subset_by_dataset = {
-        "electric_motor_temperature": (
-            "Для аудиторной работы выбрать 1-3 значения profile_id или не более 50 000 строк; "
-            "сохранять profile_id для группового разбиения."
+        "zenodo_motor_temperature": (
+            "Использовать компактный CSV из `data/processed/external`; при чтении исходного .ts-файла "
+            "сохранять profile_id и не перемешивать соседние временные фрагменты до разбиения."
         ),
         "permanent_magnet_dc_worm_motor": (
             "Выбрать 2-4 листа Excel с простыми переходными процессами; преобразовать их в один CSV "
@@ -965,8 +972,8 @@ def _minimum_working_subset(dataset_id: str, format_note: str, size_note: str) -
 def _split_rule(dataset_id: str, lesson: str) -> str:
     """Вернуть правило разбиения данных без утечки между обучением и проверкой."""
 
-    if dataset_id == "electric_motor_temperature":
-        return "Разбивать по profile_id или по временным блокам; случайное перемешивание соседних строк не применять."
+    if dataset_id == "zenodo_motor_temperature":
+        return "Разбивать по profile_id или по временным блокам; случайное перемешивание соседних фрагментов не применять."
     if dataset_id in {
         "figshare_three_phase_induction_fault",
         "paderborn_bearing",
@@ -990,7 +997,7 @@ def _target_rule(dataset_id: str, lesson: str) -> str:
     """Вернуть конкретную постановку целевой переменной для расширенного задания."""
 
     regression_targets = {
-        "electric_motor_temperature": "Цель: температура обмотки статора или постоянных магнитов; исключить эту температуру из признаков.",
+        "zenodo_motor_temperature": "Цель: целевая температура временного фрагмента; саму целевую температуру исключить из признаков.",
         "ev_powertrain_efficiency": "Цель: расчетный КПД силовой установки; признаки, прямо входящие в формулу КПД, использовать только после проверки утечки.",
         "permanent_magnet_dc_worm_motor": "Цель: установившаяся скорость или средний ток по окну переходного процесса.",
         "uci_combined_cycle_power_plant": "Цель: чистая электрическая мощность PE, МВт.",
@@ -1000,7 +1007,7 @@ def _target_rule(dataset_id: str, lesson: str) -> str:
         "pmsm_geometry_torque_zenodo": "Цель: средний электромагнитный момент или амплитуда пульсаций момента.",
     }
     classification_targets = {
-        "electric_motor_temperature": "Класс: 1, если температура ниже заранее заданного учебного предела; 0, если предел превышен.",
+        "zenodo_motor_temperature": "Класс: 1, если целевая температура ниже заранее заданного учебного предела; 0, если предел превышен.",
         "uci_ai4i_2020": "Класс: Machine failure; флаги причин отказа TWF, HDF, PWF, OSF, RNF исключить из признаков.",
         "uci_electrical_grid_stability": "Класс: stabf; непрерывный показатель stab исключить из признаков.",
         "figshare_three_phase_induction_fault": "Класс: исправный или отказный режим по имени исходного файла; имя файла не включать в признаки.",
@@ -1041,10 +1048,12 @@ def dataset_assignments() -> pd.DataFrame:
             str(row["format_note"]),
             str(row["size_note"]),
         )
+        implementation_status = str(row["implementation_status"])
         dataset_structure = (
             f"Объект: {object_name}. Формат данных: {row['format_note']}. "
             f"Размер или масштаб: {row['size_note']}. Доступ: {row['access']}. "
-            f"Лицензия или ограничение использования: {row['license']}."
+            f"Лицензия или ограничение использования: {row['license']}. "
+            f"Статус реализации: {implementation_status}."
         )
 
         if "1" in lessons:
@@ -1054,6 +1063,7 @@ def dataset_assignments() -> pd.DataFrame:
                     "dataset_id": dataset_id,
                     "lesson": "1",
                     "assignment_title": f"Первичный анализ данных: {row['name']}",
+                    "implementation_status": implementation_status,
                     "theory_block": (
                         "Теоретический блок должен раскрыть структуру инженерного "
                         "набора данных. Необходимо определить, что является наблюдением "
@@ -1113,6 +1123,7 @@ def dataset_assignments() -> pd.DataFrame:
                     "dataset_id": dataset_id,
                     "lesson": "2",
                     "assignment_title": f"Регрессионная модель: {row['name']}",
+                    "implementation_status": implementation_status,
                     "theory_block": (
                         "Теоретический блок должен объяснить постановку регрессии "
                         "(regression) как задачи прогнозирования непрерывной величины. "
@@ -1172,6 +1183,7 @@ def dataset_assignments() -> pd.DataFrame:
                     "dataset_id": dataset_id,
                     "lesson": "3",
                     "assignment_title": f"Классификация режимов: {row['name']}",
+                    "implementation_status": implementation_status,
                     "theory_block": (
                         "Теоретический блок должен объяснить классификацию "
                         "(classification) как задачу отнесения наблюдения к одному из "
@@ -1245,12 +1257,13 @@ def _dataset_metadata_text() -> str:
 4. `loss_power_w = input_power_w - output_power_w`;
 4. температура обмотки увеличивается при росте потерь и тока.
 
-Открытый реальный ориентир для структуры признаков: Electric Motor Temperature,
-набор измерений постоянно-магнитной синхронной машины на стенде Paderborn
-University LEA Department. Набор содержит скорость, момент, токи, напряжения и
-температуры, но для учебного комплекта не загружается автоматически, поскольку
-доступ через Kaggle обычно требует пользовательского соглашения и учетных
-данных.
+Открытые реальные ориентиры для структуры признаков: Zenodo
+`ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
+diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
+Они используются в расширенных блокнотах занятий 1-3 как отдельные
+развернутые задания. Для обязательных базовых занятий сохраняются малые
+учебные CSV-файлы, чтобы запуск не зависел от пропускной способности сети и
+размера исходных архивов.
 
 ## Файлы
 
@@ -1277,6 +1290,42 @@ University LEA Department. Набор содержит скорость, мом�
    открытых и вспомогательных наборов данных для занятий 1-3.
 8. `practice_01_03_dataset_assignments.csv` - развернутые задания по каждому
    найденному набору данных.
+
+## Важное различие распределений КПД
+
+Занятие 2 и занятие 3 используют разные учебные постановки. В занятии 2
+распределение `efficiency` подобрано для регрессии КПД в широком диапазоне
+режимов. В занятии 3 распределение специально изменено для классификации:
+часть строк формирует сбалансированную группу `low_efficiency`, чтобы дерево
+решений встретило несколько типов недопустимых режимов. Поэтому меньший
+верхний предел КПД в занятии 3 является методическим свойством данных, а не
+противоречием физической модели двигателя.
+
+## Внешние открытые наборы данных
+
+Расширенные материалы хранятся в `data/processed/external/`. Для каждого
+источника подготовлены три файла: feature-CSV, diagnostics-CSV и metadata-MD.
+
+1. `zenodo_motor_temperature_features.csv`,
+   `zenodo_motor_temperature_diagnostics.csv`,
+   `zenodo_motor_temperature_metadata.md`.
+   Источник: Zenodo `ElectricMotorTemperature`, DOI
+   `10.5281/zenodo.11235562`, лицензия CC BY 4.0.
+2. `zenodo_pmsm_inverter_fault_features.csv`,
+   `zenodo_pmsm_inverter_fault_diagnostics.csv`,
+   `zenodo_pmsm_inverter_fault_metadata.md`.
+   Источник: Zenodo PMSM inverter fault diagnosis, лицензия CC BY 4.0.
+3. `mendeley_ev_powertrain_efficiency_features.csv`,
+   `mendeley_ev_powertrain_efficiency_diagnostics.csv`,
+   `mendeley_ev_powertrain_efficiency_metadata.md`.
+   Источник: Mendeley Data `Processed Data for EV Powertrain Efficiency`,
+   DOI `10.17632/kbwr2z8r3y.1`, лицензия CC BY 4.0.
+
+Файлы `external_dataset_index.csv` и `external_dataset_index.json` являются
+машиночитаемым реестром внешних источников. В расширенных заданиях запрещено
+использовать diagnostics-CSV как автоматический вход модели без отдельного
+обоснования, поскольку в нем могут находиться производные признаки,
+раскрывающие способ расчета целевой переменной.
 
 ## Ограничения применимости
 

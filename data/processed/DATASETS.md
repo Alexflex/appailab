@@ -13,12 +13,13 @@
 4. `loss_power_w = input_power_w - output_power_w`;
 4. температура обмотки увеличивается при росте потерь и тока.
 
-Открытый реальный ориентир для структуры признаков: Electric Motor Temperature,
-набор измерений постоянно-магнитной синхронной машины на стенде Paderborn
-University LEA Department. Набор содержит скорость, момент, токи, напряжения и
-температуры, но для учебного комплекта не загружается автоматически, поскольку
-доступ через Kaggle обычно требует пользовательского соглашения и учетных
-данных.
+Открытые реальные ориентиры для структуры признаков: Zenodo
+`ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
+diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
+Они используются в расширенных блокнотах занятий 1-3 как отдельные
+развернутые задания. Для обязательных базовых занятий сохраняются малые
+учебные CSV-файлы, чтобы запуск не зависел от пропускной способности сети и
+размера исходных архивов.
 
 ## Файлы
 
@@ -45,6 +46,42 @@ University LEA Department. Набор содержит скорость, мом�
    открытых и вспомогательных наборов данных для занятий 1-3.
 8. `practice_01_03_dataset_assignments.csv` - развернутые задания по каждому
    найденному набору данных.
+
+## Важное различие распределений КПД
+
+Занятие 2 и занятие 3 используют разные учебные постановки. В занятии 2
+распределение `efficiency` подобрано для регрессии КПД в широком диапазоне
+режимов. В занятии 3 распределение специально изменено для классификации:
+часть строк формирует сбалансированную группу `low_efficiency`, чтобы дерево
+решений встретило несколько типов недопустимых режимов. Поэтому меньший
+верхний предел КПД в занятии 3 является методическим свойством данных, а не
+противоречием физической модели двигателя.
+
+## Внешние открытые наборы данных
+
+Расширенные материалы хранятся в `data/processed/external/`. Для каждого
+источника подготовлены три файла: feature-CSV, diagnostics-CSV и metadata-MD.
+
+1. `zenodo_motor_temperature_features.csv`,
+   `zenodo_motor_temperature_diagnostics.csv`,
+   `zenodo_motor_temperature_metadata.md`.
+   Источник: Zenodo `ElectricMotorTemperature`, DOI
+   `10.5281/zenodo.11235562`, лицензия CC BY 4.0.
+2. `zenodo_pmsm_inverter_fault_features.csv`,
+   `zenodo_pmsm_inverter_fault_diagnostics.csv`,
+   `zenodo_pmsm_inverter_fault_metadata.md`.
+   Источник: Zenodo PMSM inverter fault diagnosis, лицензия CC BY 4.0.
+3. `mendeley_ev_powertrain_efficiency_features.csv`,
+   `mendeley_ev_powertrain_efficiency_diagnostics.csv`,
+   `mendeley_ev_powertrain_efficiency_metadata.md`.
+   Источник: Mendeley Data `Processed Data for EV Powertrain Efficiency`,
+   DOI `10.17632/kbwr2z8r3y.1`, лицензия CC BY 4.0.
+
+Файлы `external_dataset_index.csv` и `external_dataset_index.json` являются
+машиночитаемым реестром внешних источников. В расширенных заданиях запрещено
+использовать diagnostics-CSV как автоматический вход модели без отдельного
+обоснования, поскольку в нем могут находиться производные признаки,
+раскрывающие способ расчета целевой переменной.
 
 ## Ограничения применимости
 

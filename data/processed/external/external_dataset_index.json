@@ -1,0 +1,32 @@
+[
+  {
+    "dataset_id": "zenodo_motor_temperature",
+    "title_ru": "ElectricMotorTemperature, Zenodo TSML Archive",
+    "source_url": "https://zenodo.org/records/11235562",
+    "license_note": "CC BY 4.0; прямая загрузка файлов формата .ts из Zenodo",
+    "features_file": "data/processed/external/zenodo_motor_temperature_features.csv",
+    "diagnostics_file": "data/processed/external/zenodo_motor_temperature_diagnostics.csv",
+    "metadata_file": "data/processed/external/zenodo_motor_temperature_metadata.md",
+    "prepared": true
+  },
+  {
+    "dataset_id": "zenodo_pmsm_inverter_fault",
+    "title_ru": "Zenodo PMSM inverter fault diagnosis",
+    "source_url": "https://zenodo.org/records/14482932",
+    "license_note": "CC BY 4.0",
+    "features_file": "data/processed/external/zenodo_pmsm_inverter_fault_features.csv",
+    "diagnostics_file": "data/processed/external/zenodo_pmsm_inverter_fault_diagnostics.csv",
+    "metadata_file": "data/processed/external/zenodo_pmsm_inverter_fault_metadata.md",
+    "prepared": true
+  },
+  {
+    "dataset_id": "mendeley_ev_powertrain_efficiency",
+    "title_ru": "Processed Data for EV Powertrain Efficiency, Mendeley Data",
+    "source_url": "https://data.mendeley.com/datasets/kbwr2z8r3y",
+    "license_note": "CC BY 4.0",
+    "features_file": "data/processed/external/mendeley_ev_powertrain_efficiency_features.csv",
+    "diagnostics_file": "data/processed/external/mendeley_ev_powertrain_efficiency_diagnostics.csv",
+    "metadata_file": "data/processed/external/mendeley_ev_powertrain_efficiency_metadata.md",
+    "prepared": true
+  }
+]

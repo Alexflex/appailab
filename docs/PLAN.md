@@ -1209,6 +1209,12 @@ P_req must be satisfied.
 5. `data/processed/practice_03_drive_mode_diagnostics.csv`;
 6. `data/processed/practice_02_motor_efficiency.csv` - полный диагностический файл для совместимости;
 7. `data/processed/practice_03_drive_mode_classification.csv` - полный диагностический файл для совместимости;
+8. `data/processed/external/zenodo_motor_temperature_*` - компактные
+   учебные фрагменты Zenodo `ElectricMotorTemperature`;
+9. `data/processed/external/zenodo_pmsm_inverter_fault_*` - компактные
+   учебные фрагменты Zenodo PMSM inverter fault diagnosis;
+10. `data/processed/external/mendeley_ev_powertrain_efficiency_*` -
+    компактные учебные фрагменты Mendeley EV Powertrain Efficiency;
 
 Проектные файлы для последующих занятий:
 
@@ -1249,12 +1255,15 @@ P_req must be satisfied.
 для обеспечения гарантированного запуска в Google Colab и на сервере кафедры.
 
 Для научно-методической связи с реальными измерениями в материалы включены
-следующие открытые или условно открытые источники:
+следующие открытые источники с прямой загрузкой без Kaggle:
 
-1. Electric Motor Temperature, Kaggle - основной реальный ориентир для
-   занятий 1-2 и возможный источник производной тепловой классификации для
-   занятия 3. Набор содержит стендовые данные PMSM: скорость, момент, токи,
-   напряжения, температуры и идентификаторы профилей.
+1. Zenodo `ElectricMotorTemperature` из TSML Archive - открытый набор
+   многомерных временных рядов (multivariate time series, многоканальные
+   временные последовательности) для регрессии температуры электродвигателя.
+   Исходные файлы имеют формат `.ts` и содержат временные фрагменты длиной
+   60 отсчетов. Поскольку физические имена каналов в архиве не заданы, в
+   учебной выборке используются нейтральные имена `channel_00_mean`,
+   `channel_01_mean` и далее.
 2. Zenodo PMSM inverter fault diagnosis - компактный набор по PMSM-инвертору
    для расширенных задач диагностики и регрессии температурных признаков.
 3. Processed Data for EV Powertrain Efficiency, Mendeley Data - источник для
@@ -1281,6 +1290,27 @@ P_req must be satisfied.
 задание в файле `practice_01_03_dataset_assignments.csv`. Такое задание
 включает теоретический блок, практический блок, ожидаемые артефакты отчета,
 методическое назначение и перечень рисков.
+
+В каталог и таблицу заданий добавлен столбец `implementation_status`.
+Значение `external_notebook_ready` означает, что для источника уже подготовлен
+компактный CSV и отдельные блокноты `student` и `teacher`. Значение
+`methodology_only` означает, что источник описан методически, но требует
+самостоятельной загрузки и предварительной обработки данных.
+
+Для трех утвержденных внешних источников дополнительно реализованы отдельные
+блокноты по занятиям 1-3:
+
+| Источник | Занятие 1 | Занятие 2 | Занятие 3 |
+|---|---|---|---|
+| Zenodo `ElectricMotorTemperature` | `01_zenodo_motor_temp_*` | `02_zenodo_motor_temp_*` | `03_zenodo_motor_temp_*` |
+| Zenodo PMSM inverter fault diagnosis | `01_zenodo_inverter_*` | `02_zenodo_inverter_*` | `03_zenodo_inverter_*` |
+| Mendeley EV Powertrain Efficiency | `01_mendeley_ev_*` | `02_mendeley_ev_*` | `03_mendeley_ev_*` |
+
+Звездочка в имени означает две версии: `student` - студенческая версия без
+готовых выводов и `teacher` - преподавательская версия с эталонными
+результатами. Все эти файлы располагаются в `notebooks/external/student/` и
+`notebooks/external/teacher/`. Исходные данные сохраняются в `data/raw/`, а
+компактные учебные фрагменты - в `data/processed/external/`.
 
 Для облегчения проверки и последующего расширения также подготовлены два
 сводных методических документа:
