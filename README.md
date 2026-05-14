@@ -143,6 +143,13 @@ Google Colab - облачная среда выполнения Jupyter-блок
 минимальные зависимости из `requirements-colab.txt` и переводит рабочий
 каталог в корень проекта.
 
+Для студентов подготовлены отдельные инструкции:
+
+1. `docs/student_colab_guide.md` - подробная пошаговая инструкция;
+2. `docs/student_colab_guide.pdf` - PDF-версия подробной инструкции;
+3. `docs/student_colab_quickstart.md` - краткая памятка;
+4. `docs/student_colab_quickstart.pdf` - одностраничная PDF-памятка.
+
 Базовые блокноты можно открыть напрямую:
 
 | Занятие | Colab-ссылка |
