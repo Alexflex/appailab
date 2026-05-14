@@ -1,6 +1,6 @@
 """Генераторы учебных инженерных наборов данных.
 
-Модуль используется в практических занятиях 1-3. Он формирует небольшие
+Модуль используется в практических занятиях 1-6. Он формирует небольшие
 таблицы, которые можно обрабатывать в аудитории за ограниченное время.
 
 Методическое допущение:
@@ -33,6 +33,15 @@ class DatasetPaths:
     practice_03: Path
     practice_03_features: Path
     practice_03_diagnostics: Path
+    practice_04: Path
+    practice_04_features: Path
+    practice_04_diagnostics: Path
+    practice_05: Path
+    practice_05_features: Path
+    practice_05_diagnostics: Path
+    practice_06: Path
+    practice_06_features: Path
+    practice_06_diagnostics: Path
     catalog: Path
     assignments: Path
     metadata: Path
@@ -396,6 +405,275 @@ def generate_drive_mode_classification(
     return _round_engineering_columns(result)
 
 
+def generate_haps_thermal_dataset(
+    profile_count: int = 6,
+    steps_per_profile: int = 120,
+    random_state: int = RANDOM_SEED + 4,
+) -> pd.DataFrame:
+    """Сформировать учебный набор для теплового моделирования электропривода.
+
+    HAPS (High Altitude Platform Station) - высотная псевдоспутниковая
+    платформа. В учебной постановке рассматривается электропривод воздушного
+    винта, работающий при меняющейся высоте, плотности воздуха и охлаждении.
+    Температура обмотки рассчитывается рекуррентной тепловой моделью первого
+    порядка, а затем дополняется небольшим измерительным шумом.
+    """
+
+    rng = np.random.default_rng(random_state)
+    rows: list[dict[str, float | int | str]] = []
+    dt_s = 5.0
+    sample_id = 1
+
+    altitude_centers = np.linspace(2_000.0, 19_000.0, profile_count)
+    load_centers = np.array([0.35, 0.50, 0.68, 0.82, 0.60, 0.45])[:profile_count]
+    segment_names = ["climb", "cruise_low", "cruise_high", "payload", "descent", "loiter"][:profile_count]
+
+    for profile_index in range(profile_count):
+        altitude_base = altitude_centers[profile_index]
+        load_base = load_centers[profile_index]
+        temperature_state = rng.uniform(24.0, 38.0)
+        for step in range(steps_per_profile):
+            time_s = step * dt_s
+            mission_phase = 2.0 * np.pi * step / max(steps_per_profile - 1, 1)
+            altitude_m = altitude_base + 450.0 * np.sin(mission_phase) + rng.normal(0.0, 90.0)
+            altitude_m = float(np.clip(altitude_m, 500.0, 21_000.0))
+            air_density_kg_m3 = 1.225 * np.exp(-altitude_m / 8_500.0)
+            ambient_temp_c = 15.0 - 0.0065 * altitude_m + rng.normal(0.0, 1.2)
+            ambient_temp_c = float(np.clip(ambient_temp_c, -58.0, 25.0))
+            cooling_air_speed_mps = 18.0 + 34.0 * air_density_kg_m3 + rng.normal(0.0, 1.4)
+            cooling_air_speed_mps = float(np.clip(cooling_air_speed_mps, 8.0, 58.0))
+
+            load_fraction = np.clip(
+                load_base + 0.10 * np.sin(2.0 * mission_phase + profile_index) + rng.normal(0.0, 0.035),
+                0.20,
+                0.95,
+            )
+            speed_rpm = 2_200.0 + 4_100.0 * load_fraction + rng.normal(0.0, 160.0)
+            speed_rpm = float(np.clip(speed_rpm, 1_800.0, 6_800.0))
+            torque_nm = 4.0 + 17.0 * load_fraction + rng.normal(0.0, 0.45)
+            torque_nm = float(np.clip(torque_nm, 2.5, 22.0))
+            voltage_v = float(rng.choice([270.0, 350.0, 540.0], p=[0.30, 0.40, 0.30]) + rng.normal(0.0, 2.0))
+
+            omega_rad_s = 2.0 * np.pi * speed_rpm / 60.0
+            output_power_w = torque_nm * omega_rad_s
+            efficiency = 0.88 + 0.045 * np.exp(-((load_fraction - 0.67) / 0.24) ** 2)
+            efficiency -= 0.018 * (1.0 - air_density_kg_m3 / 1.225)
+            efficiency += rng.normal(0.0, 0.006)
+            efficiency = float(np.clip(efficiency, 0.80, 0.94))
+            input_power_w = output_power_w / efficiency
+            current_a = input_power_w / voltage_v + rng.normal(0.0, 0.18)
+            current_a = float(np.clip(current_a, 2.0, 62.0))
+            input_power_w = voltage_v * current_a
+            total_loss_w = max(input_power_w - output_power_w, 40.0)
+
+            winding_resistance_ohm = 0.072 * (1.0 + 0.0039 * (temperature_state - 20.0))
+            copper_loss_w = current_a**2 * winding_resistance_ohm
+            iron_loss_w = 0.0000022 * speed_rpm**2 + 18.0 * load_fraction
+            mechanical_loss_w = 0.00000085 * speed_rpm**2 + 4.0 * cooling_air_speed_mps
+            total_loss_w = 0.55 * total_loss_w + 0.45 * (copper_loss_w + iron_loss_w + mechanical_loss_w)
+
+            thermal_resistance_k_per_w = 0.95 / np.sqrt(max(cooling_air_speed_mps, 1.0))
+            thermal_time_constant_s = 110.0 + 180.0 / max(air_density_kg_m3, 0.08)
+            steady_state_temp_c = ambient_temp_c + thermal_resistance_k_per_w * total_loss_w
+            temperature_state += (dt_s / thermal_time_constant_s) * (steady_state_temp_c - temperature_state)
+            winding_temp_c = temperature_state + rng.normal(0.0, 1.1)
+            thermal_limit_c = 65.0
+
+            rows.append(
+                {
+                    "sample_id": sample_id,
+                    "profile_id": profile_index + 1,
+                    "time_s": time_s,
+                    "altitude_m": altitude_m,
+                    "air_density_kg_m3": air_density_kg_m3,
+                    "ambient_temp_c": ambient_temp_c,
+                    "cooling_air_speed_mps": cooling_air_speed_mps,
+                    "speed_rpm": speed_rpm,
+                    "torque_nm": torque_nm,
+                    "voltage_v": voltage_v,
+                    "current_a": current_a,
+                    "winding_temp_c": winding_temp_c,
+                    "output_power_w": output_power_w,
+                    "input_power_w": input_power_w,
+                    "copper_loss_w": copper_loss_w,
+                    "iron_loss_w": iron_loss_w,
+                    "mechanical_loss_w": mechanical_loss_w,
+                    "total_loss_w": total_loss_w,
+                    "thermal_resistance_k_per_w": thermal_resistance_k_per_w,
+                    "thermal_time_constant_s": thermal_time_constant_s,
+                    "steady_state_temp_c": steady_state_temp_c,
+                    "temperature_margin_c": thermal_limit_c - winding_temp_c,
+                    "is_overheated": int(winding_temp_c > thermal_limit_c),
+                    "mission_segment": segment_names[profile_index],
+                }
+            )
+            sample_id += 1
+
+    return _round_engineering_columns(pd.DataFrame(rows))
+
+
+def generate_partial_discharge_dataset(
+    n_per_class: int = 160,
+    random_state: int = RANDOM_SEED + 5,
+) -> pd.DataFrame:
+    """Сформировать PRPD-признаки для классификации частичных разрядов.
+
+    PRPD (Phase Resolved Partial Discharge) - фазово-разрешенное
+    представление частичных разрядов. Вместо сырых импульсных сигналов
+    учебный CSV содержит уже извлеченные признаки: заряд, фазовое положение,
+    частоту повторения и статистики формы импульса.
+    """
+
+    rng = np.random.default_rng(random_state)
+    class_specs = [
+        ("no_pd", 0, 8.0, 6.0, 180.0, 95.0, 1.0),
+        ("corona", 1, 42.0, 28.0, 92.0, 23.0, 1.8),
+        ("surface", 2, 85.0, 48.0, 140.0, 55.0, 1.2),
+        ("internal", 3, 145.0, 65.0, 60.0, 32.0, 0.95),
+    ]
+    rows: list[dict[str, float | int | str]] = []
+    sample_id = 1
+
+    for label, code, charge_center, charge_spread, phase_center, phase_std, pn_center in class_specs:
+        for _ in range(n_per_class):
+            voltage_kv = rng.uniform(6.0, 24.0)
+            frequency_hz = rng.choice([50.0, 60.0], p=[0.82, 0.18])
+            pulse_count = int(np.clip(rng.poisson(10 + 0.11 * charge_center) + code * rng.integers(2, 10), 0, 70))
+            mean_charge_pc = float(np.clip(rng.normal(charge_center, charge_spread), 0.5, 320.0))
+            max_charge_pc = float(mean_charge_pc * rng.uniform(1.25, 2.60))
+            phase_mean_deg = float((rng.normal(phase_center, phase_std / 3.0)) % 360.0)
+            if label == "internal" and rng.random() < 0.48:
+                phase_mean_deg = float((phase_mean_deg + 180.0 + rng.normal(0.0, 9.0)) % 360.0)
+            phase_std_deg = float(np.clip(rng.normal(phase_std, phase_std * 0.15), 8.0, 115.0))
+            charge_iqr_pc = float(np.clip(mean_charge_pc * rng.uniform(0.18, 0.55), 0.1, 170.0))
+            repetition_rate_hz = float(np.clip(pulse_count * frequency_hz / 100.0 + rng.normal(0.0, 1.2), 0.0, 80.0))
+            positive_negative_ratio = float(np.clip(rng.normal(pn_center, 0.22), 0.25, 3.0))
+            waveform_rise_ns = float(np.clip(rng.normal(22.0 + 9.0 * code, 5.5), 5.0, 95.0))
+            waveform_width_ns = float(np.clip(rng.normal(90.0 + 34.0 * code, 18.0), 25.0, 310.0))
+            prpd_entropy = float(np.clip(rng.normal(0.25 + 0.17 * code, 0.06), 0.05, 0.96))
+            risk_score = float(
+                np.clip(
+                    0.22 * code
+                    + 0.0025 * mean_charge_pc
+                    + 0.004 * pulse_count
+                    + rng.normal(0.0, 0.04),
+                    0.0,
+                    1.0,
+                )
+            )
+
+            rows.append(
+                {
+                    "sample_id": sample_id,
+                    "profile_id": int(rng.integers(1, 9)),
+                    "voltage_kv": voltage_kv,
+                    "frequency_hz": frequency_hz,
+                    "phase_mean_deg": phase_mean_deg,
+                    "phase_std_deg": phase_std_deg,
+                    "pulse_count": pulse_count,
+                    "mean_charge_pc": mean_charge_pc,
+                    "max_charge_pc": max_charge_pc,
+                    "charge_iqr_pc": charge_iqr_pc,
+                    "repetition_rate_hz": repetition_rate_hz,
+                    "positive_negative_ratio": positive_negative_ratio,
+                    "waveform_rise_ns": waveform_rise_ns,
+                    "waveform_width_ns": waveform_width_ns,
+                    "prpd_entropy": prpd_entropy,
+                    "defect_class": label,
+                    "defect_code": code,
+                    "has_partial_discharge": int(label != "no_pd"),
+                    "risk_score": risk_score,
+                    "high_risk": int(risk_score >= 0.62),
+                    "phase_cluster_low_deg": float((phase_mean_deg - phase_std_deg) % 360.0),
+                    "phase_cluster_high_deg": float((phase_mean_deg + phase_std_deg) % 360.0),
+                    "noise_floor_pc": float(rng.uniform(0.4, 4.5)),
+                }
+            )
+            sample_id += 1
+
+    result = pd.DataFrame(rows).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    result["sample_id"] = np.arange(1, len(result) + 1)
+    return _round_engineering_columns(result)
+
+
+def generate_equipment_modes_dataset(
+    random_state: int = RANDOM_SEED + 6,
+) -> pd.DataFrame:
+    """Сформировать набор режимов оборудования для кластеризации.
+
+    В feature-CSV занятия 6 нет целевой переменной. Столбцы `true_mode_label`
+    и `anomaly_flag` сохраняются только в diagnostics-CSV и используются
+    после кластеризации для методической интерпретации найденных групп.
+    """
+
+    rng = np.random.default_rng(random_state)
+    mode_specs = [
+        ("idle", 150, 1_200.0, 3.0, 6.0, 31.0, 1.1, 0.90),
+        ("nominal", 150, 3_200.0, 8.0, 18.0, 48.0, 1.8, 0.88),
+        ("high_load", 110, 4_800.0, 15.0, 38.0, 78.0, 3.0, 0.84),
+        ("cooling_degraded", 85, 3_900.0, 10.0, 27.0, 92.0, 2.6, 0.82),
+        ("vibration_alarm", 70, 2_900.0, 7.0, 16.0, 57.0, 6.5, 0.86),
+        ("sensor_drift", 35, 2_400.0, 5.5, 14.0, 42.0, 2.4, 0.87),
+    ]
+    rows: list[dict[str, float | int | str]] = []
+    sample_id = 1
+
+    for mode_id, (label, count, speed_center, torque_center, current_center, temp_center, vibration_center, eff_center) in enumerate(mode_specs):
+        for _ in range(count):
+            speed_rpm = float(np.clip(rng.normal(speed_center, speed_center * 0.08), 700.0, 6_200.0))
+            torque_nm = float(np.clip(rng.normal(torque_center, max(0.35, torque_center * 0.12)), 0.3, 22.0))
+            voltage_v = float(rng.choice([48.0, 96.0, 300.0], p=[0.25, 0.35, 0.40]) + rng.normal(0.0, 1.2))
+            current_a = float(np.clip(rng.normal(current_center, max(0.7, current_center * 0.14)), 1.0, 58.0))
+            temperature_c = float(np.clip(rng.normal(temp_center, 4.5), 18.0, 125.0))
+            vibration_rms_mm_s = float(np.clip(rng.normal(vibration_center, max(0.18, vibration_center * 0.18)), 0.15, 12.0))
+            acoustic_db = float(np.clip(48.0 + 3.2 * vibration_rms_mm_s + rng.normal(0.0, 2.2), 38.0, 92.0))
+            cooling_flow_lpm = float(np.clip(rng.normal(18.0 - 0.10 * temperature_c + 0.0012 * speed_rpm, 1.6), 2.0, 25.0))
+            if label == "cooling_degraded":
+                cooling_flow_lpm *= rng.uniform(0.42, 0.65)
+            efficiency = float(np.clip(rng.normal(eff_center, 0.025) - 0.002 * max(vibration_rms_mm_s - 4.0, 0.0), 0.55, 0.94))
+            pressure_kpa = float(np.clip(rng.normal(101.0 - 0.11 * cooling_flow_lpm + 0.035 * current_a, 1.8), 82.0, 118.0))
+            output_power_w = torque_nm * (2.0 * np.pi * speed_rpm / 60.0)
+            health_score = float(
+                np.clip(
+                    1.0
+                    - 0.0035 * max(temperature_c - 70.0, 0.0)
+                    - 0.055 * max(vibration_rms_mm_s - 3.5, 0.0)
+                    - 0.010 * max(current_a - 35.0, 0.0),
+                    0.0,
+                    1.0,
+                )
+            )
+            anomaly_flag = int(label in {"cooling_degraded", "vibration_alarm", "sensor_drift"} or health_score < 0.55)
+
+            rows.append(
+                {
+                    "sample_id": sample_id,
+                    "profile_id": int(rng.integers(1, 7)),
+                    "speed_rpm": speed_rpm,
+                    "torque_nm": torque_nm,
+                    "current_a": current_a,
+                    "voltage_v": voltage_v,
+                    "temperature_c": temperature_c,
+                    "vibration_rms_mm_s": vibration_rms_mm_s,
+                    "acoustic_db": acoustic_db,
+                    "cooling_flow_lpm": cooling_flow_lpm,
+                    "efficiency": efficiency,
+                    "pressure_kpa": pressure_kpa,
+                    "output_power_w": output_power_w,
+                    "true_mode_label": label,
+                    "mode_id": mode_id,
+                    "anomaly_flag": anomaly_flag,
+                    "health_score": health_score,
+                    "maintenance_priority": "high" if health_score < 0.45 else "medium" if health_score < 0.70 else "low",
+                }
+            )
+            sample_id += 1
+
+    result = pd.DataFrame(rows).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    result["sample_id"] = np.arange(1, len(result) + 1)
+    return _round_engineering_columns(result)
+
+
 def _round_engineering_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Округлить численные столбцы до точности, удобной для учебных таблиц."""
 
@@ -415,6 +693,40 @@ def _round_engineering_columns(df: pd.DataFrame) -> pd.DataFrame:
         "current_margin_a": 4,
         "temperature_margin_c": 3,
         "speed_margin_rpm": 1,
+        "time_s": 1,
+        "altitude_m": 1,
+        "air_density_kg_m3": 5,
+        "cooling_air_speed_mps": 3,
+        "winding_temp_c": 3,
+        "input_power_w": 3,
+        "copper_loss_w": 3,
+        "iron_loss_w": 3,
+        "mechanical_loss_w": 3,
+        "total_loss_w": 3,
+        "thermal_resistance_k_per_w": 6,
+        "thermal_time_constant_s": 3,
+        "steady_state_temp_c": 3,
+        "voltage_kv": 3,
+        "frequency_hz": 2,
+        "phase_mean_deg": 3,
+        "phase_std_deg": 3,
+        "mean_charge_pc": 3,
+        "max_charge_pc": 3,
+        "charge_iqr_pc": 3,
+        "repetition_rate_hz": 3,
+        "positive_negative_ratio": 4,
+        "waveform_rise_ns": 3,
+        "waveform_width_ns": 3,
+        "prpd_entropy": 5,
+        "risk_score": 5,
+        "phase_cluster_low_deg": 3,
+        "phase_cluster_high_deg": 3,
+        "noise_floor_pc": 3,
+        "vibration_rms_mm_s": 4,
+        "acoustic_db": 3,
+        "cooling_flow_lpm": 3,
+        "pressure_kpa": 3,
+        "health_score": 5,
     }
     for column, digits in decimals.items():
         if column in result.columns:
@@ -489,8 +801,118 @@ def _practice_03_diagnostic_columns() -> list[str]:
     ]
 
 
+def _practice_04_feature_columns() -> list[str]:
+    """Столбцы безопасной таблицы для регрессии температуры обмотки."""
+
+    return [
+        "sample_id",
+        "profile_id",
+        "time_s",
+        "altitude_m",
+        "air_density_kg_m3",
+        "ambient_temp_c",
+        "cooling_air_speed_mps",
+        "speed_rpm",
+        "torque_nm",
+        "voltage_v",
+        "current_a",
+        "winding_temp_c",
+    ]
+
+
+def _practice_04_diagnostic_columns() -> list[str]:
+    """Диагностические тепловые величины занятия 4."""
+
+    return [
+        "sample_id",
+        "output_power_w",
+        "input_power_w",
+        "copper_loss_w",
+        "iron_loss_w",
+        "mechanical_loss_w",
+        "total_loss_w",
+        "thermal_resistance_k_per_w",
+        "thermal_time_constant_s",
+        "steady_state_temp_c",
+        "temperature_margin_c",
+        "is_overheated",
+        "mission_segment",
+    ]
+
+
+def _practice_05_feature_columns() -> list[str]:
+    """Столбцы учебной таблицы для классификации частичных разрядов."""
+
+    return [
+        "sample_id",
+        "profile_id",
+        "voltage_kv",
+        "frequency_hz",
+        "phase_mean_deg",
+        "phase_std_deg",
+        "pulse_count",
+        "mean_charge_pc",
+        "max_charge_pc",
+        "charge_iqr_pc",
+        "repetition_rate_hz",
+        "positive_negative_ratio",
+        "waveform_rise_ns",
+        "waveform_width_ns",
+        "prpd_entropy",
+        "defect_class",
+    ]
+
+
+def _practice_05_diagnostic_columns() -> list[str]:
+    """Диагностические столбцы правила разметки занятия 5."""
+
+    return [
+        "sample_id",
+        "defect_code",
+        "has_partial_discharge",
+        "risk_score",
+        "high_risk",
+        "phase_cluster_low_deg",
+        "phase_cluster_high_deg",
+        "noise_floor_pc",
+    ]
+
+
+def _practice_06_feature_columns() -> list[str]:
+    """Столбцы таблицы для обучения без учителя."""
+
+    return [
+        "sample_id",
+        "profile_id",
+        "speed_rpm",
+        "torque_nm",
+        "current_a",
+        "voltage_v",
+        "temperature_c",
+        "vibration_rms_mm_s",
+        "acoustic_db",
+        "cooling_flow_lpm",
+        "efficiency",
+        "pressure_kpa",
+    ]
+
+
+def _practice_06_diagnostic_columns() -> list[str]:
+    """Диагностические столбцы для интерпретации кластеров."""
+
+    return [
+        "sample_id",
+        "output_power_w",
+        "true_mode_label",
+        "mode_id",
+        "anomaly_flag",
+        "health_score",
+        "maintenance_priority",
+    ]
+
+
 def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
-    """Создать CSV-файлы для первых трех практических занятий."""
+    """Создать CSV-файлы для практических занятий 1-6."""
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -502,6 +924,15 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
     practice_03 = output_path / "practice_03_drive_mode_classification.csv"
     practice_03_features = output_path / "practice_03_drive_mode_features.csv"
     practice_03_diagnostics = output_path / "practice_03_drive_mode_diagnostics.csv"
+    practice_04 = output_path / "practice_04_haps_thermal.csv"
+    practice_04_features = output_path / "practice_04_haps_thermal_features.csv"
+    practice_04_diagnostics = output_path / "practice_04_haps_thermal_diagnostics.csv"
+    practice_05 = output_path / "practice_05_partial_discharge.csv"
+    practice_05_features = output_path / "practice_05_partial_discharge_features.csv"
+    practice_05_diagnostics = output_path / "practice_05_partial_discharge_diagnostics.csv"
+    practice_06 = output_path / "practice_06_equipment_modes.csv"
+    practice_06_features = output_path / "practice_06_equipment_modes_features.csv"
+    practice_06_diagnostics = output_path / "practice_06_equipment_modes_diagnostics.csv"
     catalog = output_path / "practice_01_03_dataset_catalog.csv"
     assignments = output_path / "practice_01_03_dataset_assignments.csv"
     metadata = output_path / "DATASETS.md"
@@ -529,6 +960,21 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
     practice_03_df[_practice_03_feature_columns()].to_csv(practice_03_features, index=False)
     practice_03_df[_practice_03_diagnostic_columns()].to_csv(practice_03_diagnostics, index=False)
 
+    practice_04_df = generate_haps_thermal_dataset()
+    practice_04_df.to_csv(practice_04, index=False)
+    practice_04_df[_practice_04_feature_columns()].to_csv(practice_04_features, index=False)
+    practice_04_df[_practice_04_diagnostic_columns()].to_csv(practice_04_diagnostics, index=False)
+
+    practice_05_df = generate_partial_discharge_dataset()
+    practice_05_df.to_csv(practice_05, index=False)
+    practice_05_df[_practice_05_feature_columns()].to_csv(practice_05_features, index=False)
+    practice_05_df[_practice_05_diagnostic_columns()].to_csv(practice_05_diagnostics, index=False)
+
+    practice_06_df = generate_equipment_modes_dataset()
+    practice_06_df.to_csv(practice_06, index=False)
+    practice_06_df[_practice_06_feature_columns()].to_csv(practice_06_features, index=False)
+    practice_06_df[_practice_06_diagnostic_columns()].to_csv(practice_06_diagnostics, index=False)
+
     dataset_catalog().to_csv(catalog, index=False)
     dataset_assignments().to_csv(assignments, index=False)
     metadata.write_text(_dataset_metadata_text(), encoding="utf-8")
@@ -541,6 +987,15 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
         practice_03=practice_03,
         practice_03_features=practice_03_features,
         practice_03_diagnostics=practice_03_diagnostics,
+        practice_04=practice_04,
+        practice_04_features=practice_04_features,
+        practice_04_diagnostics=practice_04_diagnostics,
+        practice_05=practice_05,
+        practice_05_features=practice_05_features,
+        practice_05_diagnostics=practice_05_diagnostics,
+        practice_06=practice_06,
+        practice_06_features=practice_06_features,
+        practice_06_diagnostics=practice_06_diagnostics,
         catalog=catalog,
         assignments=assignments,
         metadata=metadata,
@@ -1242,9 +1697,9 @@ def dataset_assignments() -> pd.DataFrame:
 def _dataset_metadata_text() -> str:
     """Вернуть методическое описание сформированных CSV-файлов."""
 
-    return """# Учебные наборы данных для практических занятий 1-3
+    return """# Учебные наборы данных для практических занятий 1-6
 
-Дата формирования: 2026-05-07.
+Дата формирования: 2026-05-14.
 
 ## Общий принцип
 
@@ -1256,6 +1711,12 @@ def _dataset_metadata_text() -> str:
 3. `efficiency = output_power_w / input_power_w`;
 4. `loss_power_w = input_power_w - output_power_w`;
 5. температура обмотки увеличивается при росте потерь и тока.
+6. тепловой переходный процесс электропривода приближенно описывается
+   моделью первого порядка;
+7. PRPD-признаки частичных разрядов формируются из фазового распределения,
+   кажущегося заряда и повторяемости импульсов;
+8. режимы оборудования в задаче кластеризации задаются сенсорными
+   профилями без целевой переменной в feature-CSV.
 
 Открытые реальные ориентиры для структуры признаков: Zenodo
 `ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
@@ -1290,6 +1751,24 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
    открытых и вспомогательных наборов данных для занятий 1-3.
 8. `practice_01_03_dataset_assignments.csv` - развернутые задания по каждому
    найденному набору данных.
+9. `practice_04_haps_thermal_features.csv` - безопасная учебная таблица для
+   регрессии температуры обмотки электропривода высотной платформы.
+10. `practice_04_haps_thermal_diagnostics.csv` - расчетные тепловые величины:
+   потери, тепловое сопротивление, постоянная времени и запас до предельной
+   температуры. Эти столбцы используются для физической интерпретации и
+   демонстрации утечек, но не являются базовыми признаками модели.
+11. `practice_05_partial_discharge_features.csv` - PRPD-признаки для
+   классификации типа частичных разрядов. PRPD (Phase Resolved Partial
+   Discharge) - фазово-разрешенное представление частичных разрядов.
+12. `practice_05_partial_discharge_diagnostics.csv` - диагностические
+   производные величины: код класса, признак наличия частичного разряда,
+   риск-оценка и границы фазовых кластеров.
+13. `practice_06_equipment_modes_features.csv` - сенсорные признаки для
+   кластеризации режимов оборудования без целевой переменной.
+14. `practice_06_equipment_modes_diagnostics.csv` - скрытая инженерная
+   разметка режимов, флаг аномалии и показатель технического состояния.
+   Эти данные можно использовать только после построения кластеров для
+   интерпретации результата.
 
 ## Важное различие распределений КПД
 
@@ -1338,4 +1817,22 @@ diagnostics-CSV и присоединяются в блокнотах тольк
 Данные не предназначены для проектирования реальной электрической машины,
 подтверждения паспортных характеристик, оценки безопасности или сертификации.
 Их назначение - обучение воспроизводимой процедуре анализа инженерных данных.
+
+## Открытые источники для расширения занятий 4-6
+
+Для самостоятельного расширения базовых практик рекомендуется рассматривать
+следующие открытые источники:
+
+1. NASA C-MAPSS Aircraft Engine Simulator Data -
+   https://data.nasa.gov/dataset/c-mapss-aircraft-engine-simulator-data.
+   Источник пригоден для обсуждения прогнозирования остаточного ресурса,
+   тепловых и режимных признаков авиационного двигателя.
+2. Mendeley Data `Partial Discharge Signals in Insulated Power Cables with
+   Time-of-Arrival Annotations` -
+   https://data.mendeley.com/datasets/3mdgxv6zt7. Набор содержит временные
+   сигналы частичных разрядов и ручные аннотации времени прихода импульсов.
+3. UCI `AI4I 2020 Predictive Maintenance Dataset` -
+   https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset.
+   Набор пригоден для сравнения учебной кластеризации режимов с задачами
+   предиктивного обслуживания и диагностики отказов.
 """

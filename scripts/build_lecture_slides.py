@@ -24,7 +24,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SLIDES_DIR = PROJECT_ROOT / "docs/slides"
 THEME_FILE = SLIDES_DIR / "theme.css"
-LECTURES = ("01_engineering_data", "02_motor_regression", "03_drive_decision_tree")
+LECTURES = (
+    "01_engineering_data",
+    "02_motor_regression",
+    "03_drive_decision_tree",
+    "04_haps_thermal_modeling",
+    "05_partial_discharge_classification",
+    "06_equipment_modes_clustering",
+)
 DEFAULT_FORMATS = ("pdf", "pptx", "html")
 
 

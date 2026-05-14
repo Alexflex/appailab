@@ -1,26 +1,27 @@
 # Прикладной искусственный интеллект: практические занятия
 
 Учебный комплект предназначен для магистрантов начального уровня и содержит
-первые три эталонных практических занятия по дисциплине "Прикладной
+первые шесть эталонных практических занятий по дисциплине "Прикладной
 искусственный интеллект".
 
-## Состав первого этапа
+## Состав реализованных этапов
 
 1. `notebooks/student/` - студенческие версии Jupyter Notebook
    (интерактивный вычислительный блокнот).
 2. `notebooks/teacher/` - версии Jupyter Notebook для преподавателя.
 3. `data/processed/` - учебные CSV-файлы (comma-separated values, текстовые
-   таблицы со значениями, разделенными запятыми) для занятий 1-3.
+   таблицы со значениями, разделенными запятыми) для занятий 1-6.
 4. `src/appai_lab/` - генераторы данных.
 5. `scripts/generate_datasets.py` - пересоздание CSV-файлов.
-6. `scripts/build_notebooks.py` - пересборка блокнотов.
-7. `scripts/prepare_external_datasets.py` - загрузка открытых внешних
+6. `scripts/build_notebooks.py` - пересборка блокнотов занятий 1-3.
+7. `scripts/build_notebooks_04_06.py` - пересборка блокнотов занятий 4-6.
+8. `scripts/prepare_external_datasets.py` - загрузка открытых внешних
    наборов данных и подготовка компактных учебных фрагментов.
-8. `scripts/build_external_dataset_notebooks.py` - сборка расширенных
+9. `scripts/build_external_dataset_notebooks.py` - сборка расширенных
    блокнотов по реальным и открытым данным.
-9. `docs/teacher_guides/` - методические указания.
-10. `docs/templates/` - шаблоны отчетов.
-11. `docs/sources/` - проверенные источники и обзоры наборов данных.
+10. `docs/teacher_guides/` - методические указания.
+11. `docs/templates/` - шаблоны отчетов.
+12. `docs/sources/` - проверенные источники и обзоры наборов данных.
 
 ## Установка локального окружения
 
@@ -60,8 +61,17 @@ python scripts/generate_datasets.py
    диагностический файл для совместимости;
 7. `data/processed/practice_03_drive_mode_classification.csv` - полный
    диагностический файл для совместимости;
-8. `data/processed/practice_01_03_dataset_catalog.csv`;
-9. `data/processed/practice_01_03_dataset_assignments.csv`.
+8. `data/processed/practice_04_haps_thermal_features.csv`;
+9. `data/processed/practice_04_haps_thermal_diagnostics.csv`;
+10. `data/processed/practice_04_haps_thermal.csv`;
+11. `data/processed/practice_05_partial_discharge_features.csv`;
+12. `data/processed/practice_05_partial_discharge_diagnostics.csv`;
+13. `data/processed/practice_05_partial_discharge.csv`;
+14. `data/processed/practice_06_equipment_modes_features.csv`;
+15. `data/processed/practice_06_equipment_modes_diagnostics.csv`;
+16. `data/processed/practice_06_equipment_modes.csv`;
+17. `data/processed/practice_01_03_dataset_catalog.csv`;
+18. `data/processed/practice_01_03_dataset_assignments.csv`.
 
 Файлы с суффиксом `_features.csv` используются в базовых студенческих
 моделях. Файлы с суффиксом `_diagnostics.csv` применяются для объяснения
@@ -108,7 +118,11 @@ python scripts/prefetch_data.py
 ```bash
 source venv/bin/activate
 python scripts/build_notebooks.py
+python scripts/build_notebooks_04_06.py
 ```
+
+Первая команда собирает базовые блокноты занятий 1-3, вторая - базовые
+блокноты занятий 4-6.
 
 Расширенные блокноты по внешним данным собираются отдельной командой:
 
@@ -175,6 +189,9 @@ GitHub. Для массового запуска в аудитории реко�
 | 01. Первичный анализ инженерных данных | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/01_engineering_data_student.ipynb) |
 | 02. Регрессия КПД | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/02_motor_regression_student.ipynb) |
 | 03. Дерево решений | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/03_drive_decision_tree_student.ipynb) |
+| 04. Прогноз температуры электропривода HAPS | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/04_haps_thermal_modeling_student.ipynb) |
+| 05. Классификация частичных разрядов | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/05_partial_discharge_classification_student.ipynb) |
+| 06. Кластеризация режимов оборудования | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/06_equipment_modes_clustering_student.ipynb) |
 
 Расширенные блокноты по внешним данным:
 

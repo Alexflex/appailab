@@ -1,4 +1,4 @@
-"""Создание CSV-файлов для практических занятий 1-3."""
+"""Создание CSV-файлов для практических занятий 1-6."""
 
 from __future__ import annotations
 
@@ -24,6 +24,15 @@ def main() -> None:
     print(f"- {paths.practice_03}")
     print(f"- {paths.practice_03_features}")
     print(f"- {paths.practice_03_diagnostics}")
+    print(f"- {paths.practice_04}")
+    print(f"- {paths.practice_04_features}")
+    print(f"- {paths.practice_04_diagnostics}")
+    print(f"- {paths.practice_05}")
+    print(f"- {paths.practice_05_features}")
+    print(f"- {paths.practice_05_diagnostics}")
+    print(f"- {paths.practice_06}")
+    print(f"- {paths.practice_06_features}")
+    print(f"- {paths.practice_06_diagnostics}")
     print(f"- {paths.catalog}")
     print(f"- {paths.assignments}")
     print(f"- {paths.metadata}")

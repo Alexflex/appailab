@@ -1,4 +1,4 @@
-"""Smoke-test инвариантов курса для занятий 1-3.
+"""Smoke-test инвариантов курса для занятий 1-6.
 
 Скрипт выполняет быстрые проверки, которые защищают учебные материалы от
 методических регрессий: утечки целевой переменной, нарушения энергетического
@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data" / "processed"
 EXTERNAL_DATA_DIR = DATA_DIR / "external"
 NOTEBOOKS_STUDENT = PROJECT_ROOT / "notebooks" / "student"
+NOTEBOOKS_TEACHER = PROJECT_ROOT / "notebooks" / "teacher"
 NOTEBOOKS_EXTERNAL_STUDENT = PROJECT_ROOT / "notebooks" / "external" / "student"
 NOTEBOOKS_EXTERNAL_TEACHER = PROJECT_ROOT / "notebooks" / "external" / "teacher"
 
@@ -186,6 +187,60 @@ def _check_practice_03() -> None:
     assert int((full[cause_columns].sum(axis=1) > 0).sum()) == 125, "Ожидалось 125 недопустимых режимов."
 
 
+def _check_practice_04() -> None:
+    features = _read_csv("practice_04_haps_thermal_features.csv")
+    diagnostics = _read_csv("practice_04_haps_thermal_diagnostics.csv")
+
+    assert features.shape == (720, 12), f"Неожиданный размер feature-CSV занятия 4: {features.shape}"
+    assert diagnostics.shape == (720, 13), f"Неожиданный размер diagnostics-CSV занятия 4: {diagnostics.shape}"
+    assert features["sample_id"].is_unique and diagnostics["sample_id"].is_unique
+    assert not ({"steady_state_temp_c", "temperature_margin_c", "is_overheated"} & set(features.columns)), (
+        "В feature-CSV занятия 4 попали диагностические тепловые столбцы."
+    )
+    assert "winding_temp_c" in features.columns, "Нет целевой температуры занятия 4."
+    assert features["winding_temp_c"].between(-60.0, 90.0).all(), "Температура занятия 4 вне учебного диапазона."
+    assert diagnostics["is_overheated"].nunique() == 2, "В занятии 4 нет обоих состояний перегрева."
+    duplicated = (set(features.columns) & set(diagnostics.columns)) - {"sample_id"}
+    assert not duplicated, f"Feature и diagnostics занятия 4 дублируют столбцы: {sorted(duplicated)}"
+
+
+def _check_practice_05() -> None:
+    features = _read_csv("practice_05_partial_discharge_features.csv")
+    diagnostics = _read_csv("practice_05_partial_discharge_diagnostics.csv")
+
+    assert features.shape == (640, 16), f"Неожиданный размер feature-CSV занятия 5: {features.shape}"
+    assert diagnostics.shape == (640, 8), f"Неожиданный размер diagnostics-CSV занятия 5: {diagnostics.shape}"
+    assert features["sample_id"].is_unique and diagnostics["sample_id"].is_unique
+    forbidden = {"defect_code", "has_partial_discharge", "risk_score", "high_risk"}
+    assert not forbidden.intersection(features.columns), (
+        f"В feature-CSV занятия 5 попали диагностические столбцы: {sorted(forbidden.intersection(features.columns))}"
+    )
+    class_counts = features["defect_class"].value_counts()
+    assert set(class_counts.index) == {"no_pd", "corona", "surface", "internal"}, (
+        f"Неверные классы частичных разрядов: {sorted(class_counts.index)}"
+    )
+    assert (class_counts == 160).all(), f"Классы занятия 5 несбалансированы: {class_counts.to_dict()}"
+    duplicated = (set(features.columns) & set(diagnostics.columns)) - {"sample_id"}
+    assert not duplicated, f"Feature и diagnostics занятия 5 дублируют столбцы: {sorted(duplicated)}"
+
+
+def _check_practice_06() -> None:
+    features = _read_csv("practice_06_equipment_modes_features.csv")
+    diagnostics = _read_csv("practice_06_equipment_modes_diagnostics.csv")
+
+    assert features.shape == (600, 12), f"Неожиданный размер feature-CSV занятия 6: {features.shape}"
+    assert diagnostics.shape == (600, 7), f"Неожиданный размер diagnostics-CSV занятия 6: {diagnostics.shape}"
+    assert features["sample_id"].is_unique and diagnostics["sample_id"].is_unique
+    forbidden = {"true_mode_label", "mode_id", "anomaly_flag", "health_score", "maintenance_priority"}
+    assert not forbidden.intersection(features.columns), (
+        f"В feature-CSV занятия 6 попала разметка для кластеризации: {sorted(forbidden.intersection(features.columns))}"
+    )
+    assert diagnostics["true_mode_label"].nunique() >= 5, "Слишком мало скрытых режимов для интерпретации кластеров."
+    assert diagnostics["anomaly_flag"].nunique() == 2, "В diagnostics занятия 6 нет обоих состояний anomaly_flag."
+    duplicated = (set(features.columns) & set(diagnostics.columns)) - {"sample_id"}
+    assert not duplicated, f"Feature и diagnostics занятия 6 дублируют столбцы: {sorted(duplicated)}"
+
+
 def _check_student_notebooks_clear_outputs() -> None:
     for path in sorted(NOTEBOOKS_STUDENT.glob("*.ipynb")):
         notebook = nbformat.read(path, as_version=4)
@@ -204,6 +259,18 @@ def _check_student_notebooks_clear_outputs() -> None:
             assert "Предупреждение о пересчете целевой переменной" in notebook_source, (
                 "В занятии 1 нет предупреждения о пересчете efficiency после imputation."
             )
+        if path.name.startswith("04_"):
+            assert "GradientBoostingRegressor" in notebook_source and "АНТИПРИМЕР" in notebook_source, (
+                "В занятии 4 нет ансамблевой модели или антипримера утечки."
+            )
+        if path.name.startswith("05_"):
+            assert "SVC" in notebook_source and "risk_score" in notebook_source, (
+                "В занятии 5 нет SVM или демонстрации утечки risk_score."
+            )
+        if path.name.startswith("06_"):
+            assert "KMeans" in notebook_source and "DBSCAN" in notebook_source and "GaussianMixture" in notebook_source, (
+                "В занятии 6 нет сравнения базовых алгоритмов кластеризации."
+            )
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
@@ -211,6 +278,13 @@ def _check_student_notebooks_clear_outputs() -> None:
             assert cell.get("execution_count") is None, (
                 f"В студенческом блокноте есть execution_count: {path.name}, cell {index}"
             )
+
+
+def _check_teacher_notebooks_04_06_executed() -> None:
+    for path in sorted(NOTEBOOKS_TEACHER.glob("0[4-6]_*.ipynb")):
+        notebook = nbformat.read(path, as_version=4)
+        output_count = sum(len(cell.get("outputs", [])) for cell in notebook.cells if cell.cell_type == "code")
+        assert output_count > 0, f"Преподавательский блокнот не выполнен: {path.name}"
 
 
 def _check_dataset_catalog_status() -> None:
@@ -407,11 +481,15 @@ def main() -> None:
     _check_practice_01()
     _check_practice_02()
     _check_practice_03()
+    _check_practice_04()
+    _check_practice_05()
+    _check_practice_06()
     _check_student_notebooks_clear_outputs()
+    _check_teacher_notebooks_04_06_executed()
     _check_dataset_catalog_status()
     _check_external_datasets()
     _check_external_notebooks()
-    print("Инварианты курса для занятий 1-3 соблюдены.")
+    print("Инварианты курса для занятий 1-6 соблюдены.")
 
 
 if __name__ == "__main__":

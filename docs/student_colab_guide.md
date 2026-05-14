@@ -2,7 +2,7 @@
 
 ## 1. Назначение инструкции
 
-Данная инструкция описывает порядок запуска практических занятий 1-3 по
+Данная инструкция описывает порядок запуска практических занятий 1-6 по
 дисциплине "Прикладной искусственный интеллект" в Google Colab.
 
 Google Colab - облачная среда выполнения Jupyter Notebook. Jupyter Notebook -
@@ -69,6 +69,9 @@ Google Colab - облачная среда выполнения Jupyter Notebook
 | 01 | Первичный анализ инженерных данных | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/01_engineering_data_student.ipynb) |
 | 02 | Регрессия коэффициента полезного действия | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/02_motor_regression_student.ipynb) |
 | 03 | Дерево решений для классификации режимов | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/03_drive_decision_tree_student.ipynb) |
+| 04 | Прогноз температуры электропривода HAPS | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/04_haps_thermal_modeling_student.ipynb) |
+| 05 | Классификация частичных разрядов | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/05_partial_discharge_classification_student.ipynb) |
+| 06 | Кластеризация режимов оборудования | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/06_equipment_modes_clustering_student.ipynb) |
 
 ### 3.2. Расширенные задания по открытым данным
 
