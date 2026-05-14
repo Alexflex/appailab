@@ -190,6 +190,12 @@ def _check_student_notebooks_clear_outputs() -> None:
     for path in sorted(NOTEBOOKS_STUDENT.glob("*.ipynb")):
         notebook = nbformat.read(path, as_version=4)
         notebook_source = "\n".join(str(cell.get("source", "")) for cell in notebook.cells)
+        assert "COLAB_BOOTSTRAP_APPailab" in notebook_source, (
+            f"В студенческом блокноте нет Colab-инициализации: {path.name}"
+        )
+        assert "requirements-colab.txt" in notebook_source, (
+            f"В студенческом блокноте нет установки Colab-зависимостей: {path.name}"
+        )
         if path.name == "03_drive_decision_tree_student.ipynb":
             assert "mode_label" in notebook_source and "not_allowed_by_mode" in notebook_source, (
                 "В занятии 3 нет анализа опасных ошибок по mode_label."
@@ -346,6 +352,12 @@ def _check_external_notebooks() -> None:
     for path in student_paths:
         notebook = nbformat.read(path, as_version=4)
         notebook_source = "\n".join(str(cell.get("source", "")) for cell in notebook.cells)
+        assert "COLAB_BOOTSTRAP_APPailab" in notebook_source, (
+            f"Во внешнем студенческом блокноте нет Colab-инициализации: {path.name}"
+        )
+        assert "requirements-colab.txt" in notebook_source, (
+            f"Во внешнем студенческом блокноте нет установки Colab-зависимостей: {path.name}"
+        )
         if path.name.startswith("01_"):
             assert "compact_numeric_profile" in notebook_source and "plot_missingness" in notebook_source, (
                 f"Во внешнем блокноте занятия 1 нет расширенного аудита данных: {path.name}"

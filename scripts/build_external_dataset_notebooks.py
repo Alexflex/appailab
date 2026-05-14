@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS_ROOT = PROJECT_ROOT / "notebooks" / "external"
 STUDENT_DIR = NOTEBOOKS_ROOT / "student"
 TEACHER_DIR = NOTEBOOKS_ROOT / "teacher"
+COLAB_REPO_URL = "https://github.com/Alexflex/appailab.git"
 
 
 @dataclass(frozen=True)
@@ -338,6 +339,66 @@ def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(notebook, path)
+
+
+def colab_bootstrap_cells() -> list[nbf.NotebookNode]:
+    """Вернуть вводные ячейки для запуска student-блокнота в Google Colab."""
+
+    return [
+        md("""
+## Инициализация среды Google Colab
+
+Эта ячейка нужна только при запуске блокнота в Google Colab (облачная среда
+выполнения Jupyter-блокнотов). Она клонирует репозиторий курса, устанавливает
+минимальные зависимости и переводит рабочий каталог в корень проекта. При
+локальном запуске или запуске на сервере кафедры ячейка не изменяет окружение.
+
+Расширенные блокноты используют компактные обработанные CSV из репозитория.
+Полные внешние архивы в Colab загружать не требуется.
+"""),
+        code(f"""
+# COLAB_BOOTSTRAP_APPailab
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+
+REPO_URL = "{COLAB_REPO_URL}"
+PROJECT_DIR = Path("/content/appailab")
+IN_COLAB = "google.colab" in sys.modules
+
+if IN_COLAB:
+    if not PROJECT_DIR.exists():
+        subprocess.run(["git", "clone", REPO_URL, str(PROJECT_DIR)], check=True)
+    os.chdir(PROJECT_DIR)
+
+    src_dir = PROJECT_DIR / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+    sentinel = PROJECT_DIR / ".colab_runtime_ready"
+    requirements_file = PROJECT_DIR / "requirements-colab.txt"
+    if not sentinel.exists():
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-r", str(requirements_file)],
+            check=True,
+        )
+        sentinel.write_text("ok\\n", encoding="utf-8")
+
+    required_csv = PROJECT_DIR / "data" / "processed" / "external" / "external_dataset_index.csv"
+    if not required_csv.exists():
+        raise FileNotFoundError(
+            "Не найдены обработанные внешние CSV. Проверьте, что репозиторий "
+            "склонирован полностью, либо выполните scripts/prepare_external_datasets.py."
+        )
+
+    print("Среда Google Colab подготовлена.")
+    print("Корень проекта:", PROJECT_DIR)
+else:
+    print("Локальный или серверный запуск: инициализация Google Colab не требуется.")
+"""),
+    ]
 
 
 def setup_cell(config: DatasetConfig) -> str:
@@ -1886,12 +1947,17 @@ plt.show()
 
 def build_cells(config: DatasetConfig, lesson: int, teacher: bool) -> list[nbf.NotebookNode]:
     if lesson == 1:
-        return lesson01_cells(config, teacher)
-    if lesson == 2:
-        return lesson02_cells(config, teacher)
-    if lesson == 3:
-        return lesson03_cells(config, teacher)
-    raise ValueError(lesson)
+        cells = lesson01_cells(config, teacher)
+    elif lesson == 2:
+        cells = lesson02_cells(config, teacher)
+    elif lesson == 3:
+        cells = lesson03_cells(config, teacher)
+    else:
+        raise ValueError(lesson)
+
+    if not teacher:
+        return colab_bootstrap_cells() + cells
+    return cells
 
 
 def main() -> None:

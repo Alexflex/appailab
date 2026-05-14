@@ -15,6 +15,7 @@ import nbformat as nbf
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOKS_STUDENT = PROJECT_ROOT / "notebooks" / "student"
 NOTEBOOKS_TEACHER = PROJECT_ROOT / "notebooks" / "teacher"
+COLAB_REPO_URL = "https://github.com/Alexflex/appailab.git"
 
 REGRESSION_STRICT_FEATURES = [
     "speed_rpm",
@@ -68,6 +69,60 @@ def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     nbf.write(notebook, path)
+
+
+def colab_bootstrap_cells() -> list[nbf.NotebookNode]:
+    """Вернуть вводные ячейки для запуска student-блокнота в Google Colab."""
+
+    return [
+        md("""
+## Инициализация среды Google Colab
+
+Эта ячейка нужна только при запуске блокнота в Google Colab (облачная среда
+выполнения Jupyter-блокнотов). Она клонирует репозиторий курса, устанавливает
+минимальные зависимости и переводит рабочий каталог в корень проекта. При
+локальном запуске или запуске на сервере кафедры ячейка не изменяет окружение.
+"""),
+        code(f"""
+# COLAB_BOOTSTRAP_APPailab
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+
+REPO_URL = "{COLAB_REPO_URL}"
+PROJECT_DIR = Path("/content/appailab")
+IN_COLAB = "google.colab" in sys.modules
+
+if IN_COLAB:
+    if not PROJECT_DIR.exists():
+        subprocess.run(["git", "clone", REPO_URL, str(PROJECT_DIR)], check=True)
+    os.chdir(PROJECT_DIR)
+
+    src_dir = PROJECT_DIR / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+    sentinel = PROJECT_DIR / ".colab_runtime_ready"
+    requirements_file = PROJECT_DIR / "requirements-colab.txt"
+    if not sentinel.exists():
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-r", str(requirements_file)],
+            check=True,
+        )
+        sentinel.write_text("ok\\n", encoding="utf-8")
+
+    required_csv = PROJECT_DIR / "data" / "processed" / "practice_01_motor_measurements.csv"
+    if not required_csv.exists():
+        subprocess.run([sys.executable, "scripts/generate_datasets.py"], check=True)
+
+    print("Среда Google Colab подготовлена.")
+    print("Корень проекта:", PROJECT_DIR)
+else:
+    print("Локальный или серверный запуск: инициализация Google Colab не требуется.")
+"""),
+    ]
 
 
 def common_setup_code(dataset_filename: str, diagnostics_filename: str | None = None) -> str:
@@ -3081,15 +3136,15 @@ print(feature_importance.round(3))
 def main() -> None:
     write_notebook(
         NOTEBOOKS_STUDENT / "01_engineering_data_student.ipynb",
-        notebook_01(teacher=False),
+        colab_bootstrap_cells() + notebook_01(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_STUDENT / "02_motor_regression_student.ipynb",
-        notebook_02(teacher=False),
+        colab_bootstrap_cells() + notebook_02(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_STUDENT / "03_drive_decision_tree_student.ipynb",
-        notebook_03(teacher=False),
+        colab_bootstrap_cells() + notebook_03(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_TEACHER / "01_engineering_data_teacher.ipynb",

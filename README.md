@@ -137,10 +137,38 @@ jupyter lab
 
 ## Запуск в Google Colab
 
-Для Google Colab (облачная среда выполнения Jupyter-блокнотов) рекомендуется
-загрузить весь каталог проекта или клонировать репозиторий, затем открыть
-студенческий блокнот из `notebooks/student/`. Блокноты ожидают, что рядом с
-ними доступны каталоги `data` и `src`.
+Google Colab - облачная среда выполнения Jupyter-блокнотов. Студенческие
+блокноты содержат первую ячейку `COLAB_BOOTSTRAP_APPailab`, которая
+автоматически определяет Colab, клонирует репозиторий, устанавливает
+минимальные зависимости из `requirements-colab.txt` и переводит рабочий
+каталог в корень проекта.
+
+Базовые блокноты можно открыть напрямую:
+
+| Занятие | Colab-ссылка |
+|---|---|
+| 01. Первичный анализ инженерных данных | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/01_engineering_data_student.ipynb) |
+| 02. Регрессия КПД | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/02_motor_regression_student.ipynb) |
+| 03. Дерево решений | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/03_drive_decision_tree_student.ipynb) |
+
+Расширенные блокноты по внешним данным:
+
+| Источник | Занятие 01 | Занятие 02 | Занятие 03 |
+|---|---|---|---|
+| Mendeley EV Powertrain | [01](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/01_mendeley_ev_student.ipynb) | [02](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/02_mendeley_ev_student.ipynb) | [03](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/03_mendeley_ev_student.ipynb) |
+| Zenodo PMSM Inverter | [01](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/01_zenodo_inverter_student.ipynb) | [02](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/02_zenodo_inverter_student.ipynb) | [03](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/03_zenodo_inverter_student.ipynb) |
+| Zenodo Motor Temperature | [01](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/01_zenodo_motor_temp_student.ipynb) | [02](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/02_zenodo_motor_temp_student.ipynb) | [03](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/external/student/03_zenodo_motor_temp_student.ipynb) |
+
+Порядок работы в Colab:
+
+1. Открыть нужный student-блокнот по ссылке.
+2. Выполнить первую ячейку инициализации.
+3. Выполнять остальные ячейки сверху вниз.
+4. При необходимости сохранить личную копию блокнота в Google Drive.
+
+Полные raw-архивы внешних источников в Colab загружать не требуется:
+компактные обработанные CSV уже находятся в `data/processed/` и
+`data/processed/external/`.
 
 ## Методическое решение по данным
 
