@@ -71,8 +71,10 @@ def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
     nbf.write(notebook, path)
 
 
-def colab_bootstrap_cells() -> list[nbf.NotebookNode]:
+def colab_bootstrap_cells(required_processed_files: list[str]) -> list[nbf.NotebookNode]:
     """Вернуть вводные ячейки для запуска student-блокнота в Google Colab."""
+
+    required_files_literal = repr(required_processed_files)
 
     return [
         md("""
@@ -113,9 +115,24 @@ if IN_COLAB:
         )
         sentinel.write_text("ok\\n", encoding="utf-8")
 
-    required_csv = PROJECT_DIR / "data" / "processed" / "practice_01_motor_measurements.csv"
-    if not required_csv.exists():
+    required_processed_files = {required_files_literal}
+    missing_files = [
+        PROJECT_DIR / "data" / "processed" / relative_path
+        for relative_path in required_processed_files
+        if not (PROJECT_DIR / "data" / "processed" / relative_path).exists()
+    ]
+    if missing_files:
         subprocess.run([sys.executable, "scripts/generate_datasets.py"], check=True)
+        missing_files = [
+            path
+            for path in missing_files
+            if not path.exists()
+        ]
+    if missing_files:
+        raise FileNotFoundError(
+            "Не найдены обязательные CSV-файлы для данного блокнота: "
+            + ", ".join(str(path.relative_to(PROJECT_DIR)) for path in missing_files)
+        )
 
     print("Среда Google Colab подготовлена.")
     print("Корень проекта:", PROJECT_DIR)
@@ -1419,8 +1436,10 @@ pd.Series(regression_metrics(y_test, experiment_pred), name="experiment")
         if teacher
         else """
 # TODO: задайте параметры самостоятельного эксперимента.
-# `experiment_degree` - степень полиномиальных признаков.
-# `experiment_alpha` - коэффициент L2-регуляризации гребневой регрессии.
+# `experiment_degree` - степень полиномиальных признаков; рекомендуемый диапазон 1..3.
+# `experiment_alpha` - коэффициент L2-регуляризации; рекомендуемый диапазон 0.01..10.
+# Не используйте степень выше 3 в аудиторной работе: это резко увеличивает
+# риск переобучения и затрудняет интерпретацию.
 experiment_degree = None
 experiment_alpha = None
 
@@ -1661,6 +1680,58 @@ plt.show()
 целевой переменной.
 """),
         md("""
+## Числовая проверка энергетического тождества
+
+Перед обучением модели необходимо явно показать, почему ток `current_a`
+исключается из строгой регрессионной постановки. Коэффициент полезного
+действия можно восстановить из момента, скорости, напряжения и тока:
+
+$$\\eta = \\frac{P_{out}}{P_{in}} =
+\\frac{M \\cdot 2\\pi n / 60}{U \\cdot I},$$
+
+где `M` - момент, `n` - частота вращения, `U` - напряжение, `I` - ток.
+Следовательно, одновременное использование `speed_rpm`, `torque_nm`,
+`voltage_v` и `current_a` дает модели почти прямой способ восстановить
+целевую переменную `efficiency`. Это называется косвенной утечкой данных:
+ответ не передан напрямую, но вычисляется из набора входных признаков.
+"""),
+        code("""
+identity_df = full_df[
+    ["sample_id", "speed_rpm", "torque_nm", "voltage_v", "current_a", "efficiency"]
+].copy()
+identity_df["omega_rad_s"] = 2.0 * np.pi * identity_df["speed_rpm"] / 60.0
+identity_df["output_power_from_torque_w"] = identity_df["torque_nm"] * identity_df["omega_rad_s"]
+identity_df["input_power_from_current_w"] = identity_df["voltage_v"] * identity_df["current_a"]
+identity_df["efficiency_from_identity"] = (
+    identity_df["output_power_from_torque_w"]
+    / identity_df["input_power_from_current_w"].clip(lower=1e-9)
+)
+identity_df["absolute_difference"] = (
+    identity_df["efficiency_from_identity"] - identity_df["efficiency"]
+).abs()
+
+identity_summary = pd.Series(
+    {
+        "mean_absolute_difference": identity_df["absolute_difference"].mean(),
+        "max_absolute_difference": identity_df["absolute_difference"].max(),
+        "correlation_with_efficiency": identity_df[
+            ["efficiency", "efficiency_from_identity"]
+        ].corr().iloc[0, 1],
+    },
+    name="energy_identity_check",
+)
+
+display(identity_summary.to_frame("value"))
+identity_df[
+    [
+        "sample_id",
+        "efficiency",
+        "efficiency_from_identity",
+        "absolute_difference",
+    ]
+].head(10)
+"""),
+        md("""
 ## Критерии допустимости признаков
 
 Критерии допустимости признаков (feature eligibility criteria) определяют,
@@ -1878,6 +1949,12 @@ metrics_interpretation
         md("""
 ## Демонстрация косвенной и прямой утечки данных
 
+> **Внимание. АНТИПРИМЕР - НЕ ИСПОЛЬЗОВАТЬ КАК РАБОЧУЮ МОДЕЛЬ.**
+> Следующий блок нужен только для демонстрации методической ошибки. Если
+> метрики модели с утечкой выше, это не означает, что модель лучше. Это
+> означает, что в признаки попала информация, раскрывающая целевую
+> переменную.
+
 Косвенная утечка данных возникает, когда целевая переменная не включена в
 признаки напрямую, но может быть восстановлена из их нелинейной комбинации.
 Для КПД действует энергетическое соотношение
@@ -1889,7 +1966,9 @@ metrics_interpretation
 Прямая утечка данных возникает при включении `output_power_w` или
 `loss_power_w`: эти величины являются расчетными компонентами целевой
 переменной. Ниже такой вариант оставлен только как контролируемая
-демонстрация методической ошибки.
+демонстрация методической ошибки. В аудиторном отчете эту модель следует
+описать в отдельном подразделе "антипример", а не сравнивать с рабочими
+моделями как допустимое улучшение.
 """),
         code("""
 leakage_demo_columns = [
@@ -2212,6 +2291,7 @@ experiment_depth = 3
 experiment_tree = DecisionTreeClassifier(
     max_depth=experiment_depth,
     min_samples_leaf=8,
+    class_weight="balanced",
     random_state=RANDOM_STATE,
 )
 experiment_tree.fit(X_train, y_train)
@@ -2226,6 +2306,8 @@ pd.Series(
         else """
 # TODO: задайте максимальную глубину дерева решений.
 # `experiment_depth` управляет числом последовательных условий от корня к листу.
+# Рекомендуемый диапазон для аудиторного эксперимента: 2..6.
+# Значения выше 6 затрудняют интерпретацию и повышают риск переобучения.
 experiment_depth = None
 
 if experiment_depth is None:
@@ -2234,6 +2316,7 @@ if experiment_depth is None:
 experiment_tree = DecisionTreeClassifier(
     max_depth=experiment_depth,
     min_samples_leaf=8,
+    class_weight="balanced",
     random_state=RANDOM_STATE,
 )
 experiment_tree.fit(X_train, y_train)
@@ -2711,11 +2794,26 @@ plt.show()
 
 Параметр `max_depth=3` ограничивает число последовательных правил. Это делает
 модель проще для интерпретации и снижает риск переобучения.
+
+Параметр `class_weight="balanced"` задает вес класса обратно
+пропорционально его частоте. Это важно, потому что недопустимые режимы
+встречаются реже допустимых, но их пропуск инженерно опаснее. Балансировка
+классов снижает смещение модели к большинству и обычно уменьшает долю ложных
+разрешений.
 """),
         code("""
+unweighted_tree_model = DecisionTreeClassifier(
+    max_depth=3,
+    min_samples_leaf=8,
+    random_state=RANDOM_STATE,
+)
+unweighted_tree_model.fit(X_train, y_train)
+y_pred_unweighted = unweighted_tree_model.predict(X_test)
+
 tree_model = DecisionTreeClassifier(
     max_depth=3,
     min_samples_leaf=8,
+    class_weight="balanced",
     random_state=RANDOM_STATE,
 )
 
@@ -2724,6 +2822,11 @@ y_pred = tree_model.predict(X_test)
 """),
         md("""
 ## Демонстрация утечки данных
+
+> **Внимание. АНТИПРИМЕР - НЕ ИСПОЛЬЗОВАТЬ КАК РАБОЧУЮ МОДЕЛЬ.**
+> Следующий блок показывает, как расчетные признаки искусственно повышают
+> метрики. Если результат кажется лучше строгой модели, это является
+> признаком утечки данных, а не основанием применять такую модель в отчете.
 
 Ниже строится дополнительное дерево решений с признаками `efficiency` и
 `output_power_w`. Эта модель не является базовой: она показывает, как
@@ -2750,6 +2853,7 @@ leakage_X_test = leakage_X.loc[X_test.index]
 leakage_tree_model = DecisionTreeClassifier(
     max_depth=3,
     min_samples_leaf=8,
+    class_weight="balanced",
     random_state=RANDOM_STATE,
 )
 
@@ -2804,7 +2908,11 @@ classification_metrics_df = pd.DataFrame(
             **classification_metrics_dict(y_test, baseline_pred),
         },
         {
-            "model": "strict_decision_tree",
+            "model": "strict_decision_tree_unweighted",
+            **classification_metrics_dict(y_test, y_pred_unweighted),
+        },
+        {
+            "model": "strict_decision_tree_balanced",
             **classification_metrics_dict(y_test, y_pred),
         },
         {
@@ -2827,10 +2935,11 @@ selected_classification_metrics = [
 fig, axes = plt.subplots(1, 4, figsize=(15, 4))
 
 for ax, metric in zip(axes, selected_classification_metrics):
+    metric_colors = ["#8c8c8c", "#bab0ac", "#4c78a8", "#e45756"][: len(classification_metrics_df)]
     ax.bar(
         classification_metrics_df.index,
         classification_metrics_df[metric],
-        color=["#8c8c8c", "#4c78a8", "#e45756"],
+        color=metric_colors,
     )
     ax.set_ylim(0.0, 1.05)
     ax.set_title(metric)
@@ -2996,6 +3105,7 @@ for depth in range(1, 8):
     model = DecisionTreeClassifier(
         max_depth=depth,
         min_samples_leaf=8,
+        class_weight="balanced",
         random_state=RANDOM_STATE,
     )
     model.fit(X_train, y_train)
@@ -3052,6 +3162,7 @@ two_feature_columns = ["temperature_c", "current_a"]
 two_feature_tree = DecisionTreeClassifier(
     max_depth=3,
     min_samples_leaf=8,
+    class_weight="balanced",
     random_state=RANDOM_STATE,
 )
 two_feature_tree.fit(X_train[two_feature_columns], y_train)
@@ -3109,12 +3220,15 @@ plt.show()
 
 При фиксированном разбиении данных ожидаемые ориентиры для `max_depth=3`:
 
-1. строгая модель имеет долю правильных ответов (accuracy) около 0.93;
-2. полнота для класса "недопустимый режим" около 0.81, F1-мера около 0.88;
-3. ожидаемая матрица ошибок строгой модели близка к `[[25, 6], [1, 73]]`;
-4. наиболее значимые признаки строгого дерева обычно включают `voltage_v`,
+1. строгая модель с `class_weight="balanced"` имеет долю правильных ответов
+   (accuracy) около 0.94;
+2. полнота для класса "недопустимый режим" около 0.94, F1-мера около 0.91;
+3. ожидаемая матрица ошибок строгой модели близка к `[[29, 2], [4, 70]]`;
+4. небалансированное дерево является полезным сравнением: оно обычно имеет
+   больше ложных разрешений для класса 0;
+5. наиболее значимые признаки строгого дерева обычно включают `voltage_v`,
    `temperature_c`, `speed_rpm` и `current_a`;
-5. опасная ошибка - недопустимый режим, ошибочно отнесенный к допустимым.
+6. опасная ошибка - недопустимый режим, ошибочно отнесенный к допустимым.
 
 Важно проверить, что студенты не включили в признаки `mode_label`,
 `violation_count`, `current_margin_a`, `temperature_margin_c`,
@@ -3136,15 +3250,28 @@ print(feature_importance.round(3))
 def main() -> None:
     write_notebook(
         NOTEBOOKS_STUDENT / "01_engineering_data_student.ipynb",
-        colab_bootstrap_cells() + notebook_01(teacher=False),
+        colab_bootstrap_cells(["practice_01_motor_measurements.csv"])
+        + notebook_01(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_STUDENT / "02_motor_regression_student.ipynb",
-        colab_bootstrap_cells() + notebook_02(teacher=False),
+        colab_bootstrap_cells(
+            [
+                "practice_02_motor_efficiency_features.csv",
+                "practice_02_motor_efficiency_diagnostics.csv",
+            ]
+        )
+        + notebook_02(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_STUDENT / "03_drive_decision_tree_student.ipynb",
-        colab_bootstrap_cells() + notebook_03(teacher=False),
+        colab_bootstrap_cells(
+            [
+                "practice_03_drive_mode_features.csv",
+                "practice_03_drive_mode_diagnostics.csv",
+            ]
+        )
+        + notebook_03(teacher=False),
     )
     write_notebook(
         NOTEBOOKS_TEACHER / "01_engineering_data_teacher.ipynb",

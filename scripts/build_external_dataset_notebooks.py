@@ -48,6 +48,8 @@ class DatasetConfig:
     forbidden_classification_features: list[str]
     class_positive_meaning: str
     regression_target_meaning: str
+    interpretation_warning: str
+    classification_semantics: str
 
 
 DATASETS = [
@@ -145,6 +147,16 @@ DATASETS = [
         ],
         class_positive_meaning="целевая температура временного фрагмента не выше учебного порога",
         regression_target_meaning="целевая температура временного фрагмента электродвигателя",
+        interpretation_warning=(
+            "Физические имена каналов в исходном архиве не заданы. Поэтому "
+            "правила и корреляции допускают преимущественно статистическую, "
+            "а не строгую физическую интерпретацию конкретных датчиков."
+        ),
+        classification_semantics=(
+            "`is_allowed` является учебной меткой: 1 означает, что целевая "
+            "температура фрагмента не выше выбранного температурного квантиля; "
+            "это не нормативное разрешение эксплуатации."
+        ),
     ),
     DatasetConfig(
         dataset_id="zenodo_pmsm_inverter_fault",
@@ -228,6 +240,16 @@ DATASETS = [
         ],
         class_positive_meaning="код FDD равен F0, то есть нормальная работа",
         regression_target_meaning="максимальная температура полумоста инвертора",
+        interpretation_warning=(
+            "Интерпретация признаков связана с лабораторной диагностикой "
+            "инвертора; перенос правил на другой стенд требует повторной "
+            "проверки единиц измерения, режимов и кодов отказов."
+        ),
+        classification_semantics=(
+            "`is_allowed` является индикатором исходного кода отказа FDD: "
+            "1 соответствует F0, 0 соответствует отказным состояниям; эта "
+            "семантика отличается от температурного и энергетического допуска."
+        ),
     ),
     DatasetConfig(
         dataset_id="mendeley_ev_powertrain_efficiency",
@@ -318,6 +340,16 @@ DATASETS = [
         ],
         class_positive_meaning="КПД электропривода не ниже учебного порога",
         regression_target_meaning="расчетный КПД электродвигателя транспортного средства",
+        interpretation_warning=(
+            "Целевая эффективность в источнике является расчетной величиной; "
+            "выводы следует трактовать как анализ траекторных данных, а не как "
+            "стендовое измерение КПД отдельного двигателя."
+        ),
+        classification_semantics=(
+            "`is_allowed` является учебной меткой низкого КПД: 1 означает, "
+            "что `motor_efficiency` не ниже выбранного квартильного порога; "
+            "это не аварийная классификация и не нормативный допуск."
+        ),
     ),
 ]
 
@@ -341,8 +373,10 @@ def write_notebook(path: Path, cells: list[nbf.NotebookNode]) -> None:
     nbf.write(notebook, path)
 
 
-def colab_bootstrap_cells() -> list[nbf.NotebookNode]:
+def colab_bootstrap_cells(required_processed_files: list[str]) -> list[nbf.NotebookNode]:
     """Вернуть вводные ячейки для запуска student-блокнота в Google Colab."""
+
+    required_files_literal = repr(required_processed_files)
 
     return [
         md("""
@@ -386,11 +420,19 @@ if IN_COLAB:
         )
         sentinel.write_text("ok\\n", encoding="utf-8")
 
-    required_csv = PROJECT_DIR / "data" / "processed" / "external" / "external_dataset_index.csv"
-    if not required_csv.exists():
+    required_processed_files = {required_files_literal}
+    missing_files = [
+        PROJECT_DIR / "data" / "processed" / relative_path
+        for relative_path in required_processed_files
+        if not (PROJECT_DIR / "data" / "processed" / relative_path).exists()
+    ]
+    if missing_files:
         raise FileNotFoundError(
-            "Не найдены обработанные внешние CSV. Проверьте, что репозиторий "
-            "склонирован полностью, либо выполните scripts/prepare_external_datasets.py."
+            "Не найдены обязательные обработанные CSV для данного внешнего "
+            "блокнота: "
+            + ", ".join(str(path.relative_to(PROJECT_DIR)) for path in missing_files)
+            + ". Проверьте, что репозиторий склонирован полностью, либо "
+            "выполните scripts/prefetch_data.py на сервере преподавателя."
         )
 
     print("Среда Google Colab подготовлена.")
@@ -766,6 +808,10 @@ def lesson01_cells(config: DatasetConfig, teacher: bool) -> list[nbf.NotebookNod
 
 Особенность обработки: {config.processing_notes}
 
+Предупреждение об интерпретации: {config.interpretation_warning}
+
+Семантика классификационной метки: {config.classification_semantics}
+
 ## План анализа
 
 1. Проверить, какие файлы фактически загружены и какая версия данных
@@ -1014,6 +1060,7 @@ def lesson02_cells(config: DatasetConfig, teacher: bool) -> list[nbf.NotebookNod
         if teacher
         else (
             "# TODO: измените degree и alpha после базового запуска.\n"
+            "# Рекомендуемые диапазоны: degree 1..3, alpha 0.01..10.\n"
             "experiment_degree = 2\n"
             "experiment_alpha = 1.0"
         )
@@ -1038,6 +1085,8 @@ def lesson02_cells(config: DatasetConfig, teacher: bool) -> list[nbf.NotebookNod
 Структура данных: {config.data_structure}
 
 Особенность обработки: {config.processing_notes}
+
+Предупреждение об интерпретации: {config.interpretation_warning}
 
 Учебная гипотеза занятия: строгий набор признаков должен давать
 интерпретируемый, но не обязательно максимальный прогноз. Если качество резко
@@ -1359,6 +1408,10 @@ print(
         md("""
 ## Демонстрация риска утечки данных
 
+> **Внимание. АНТИПРИМЕР - НЕ ИСПОЛЬЗОВАТЬ КАК РАБОЧУЮ МОДЕЛЬ.**
+> Этот блок предназначен только для демонстрации того, как диагностические
+> или расчетные столбцы могут искусственно улучшить метрики.
+
 Ниже используется расширенный набор признаков, включающий диагностические или
 расчетные столбцы. Если метрики резко улучшаются, результат нельзя считать
 доказательством качества базовой модели: возможно, модель получила
@@ -1475,6 +1528,7 @@ def lesson03_cells(config: DatasetConfig, teacher: bool) -> list[nbf.NotebookNod
         if teacher
         else (
             "# TODO: измените глубину дерева и сравните recall недопустимого класса.\n"
+            "# Рекомендуемый диапазон experiment_depth: 2..6.\n"
             "experiment_depth = 3"
         )
     )
@@ -1497,6 +1551,10 @@ def lesson03_cells(config: DatasetConfig, teacher: bool) -> list[nbf.NotebookNod
 Структура данных: {config.data_structure}
 
 Особенность обработки: {config.processing_notes}
+
+Предупреждение об интерпретации: {config.interpretation_warning}
+
+Семантика классификационной метки: {config.classification_semantics}
 
 Учебная гипотеза занятия: дерево решений должно быть не только точным, но и
 объяснимым. Поэтому оцениваются не только accuracy, но и матрица ошибок,
@@ -1645,6 +1703,16 @@ if len(scatter_features) >= 2:
     plt.show()
 scatter_features
 """),
+        md("""
+## Балансировка классов в дереве решений
+
+Во внешних наборах данных доли классов часто различаются. Параметр
+`class_weight="balanced"` увеличивает вклад редкого класса в критерий
+обучения дерева. Это не гарантирует идеальную классификацию, но снижает риск
+того, что модель будет оптимизировать только большинство и пропускать
+критический класс. Небалансированные результаты следует рассматривать как
+контрольный вариант, а не как основной режим для инженерной диагностики.
+"""),
         code("""
 def classification_metrics(y_true, y_pred):
     cm_local = confusion_matrix(y_true, y_pred, labels=[0, 1])
@@ -1661,7 +1729,12 @@ def classification_metrics(y_true, y_pred):
 majority_class = int(y_train.mode().iloc[0])
 baseline_pred = np.full(len(y_test), majority_class, dtype=int)
 
-tree_model = DecisionTreeClassifier(max_depth=3, min_samples_leaf=8, random_state=RANDOM_STATE)
+tree_model = DecisionTreeClassifier(
+    max_depth=3,
+    min_samples_leaf=8,
+    class_weight="balanced",
+    random_state=RANDOM_STATE,
+)
 tree_model.fit(X_train, y_train)
 y_pred = tree_model.predict(X_test)
 
@@ -1683,7 +1756,12 @@ random_train_idx, random_test_idx = train_test_split(
     random_state=RANDOM_STATE,
     stratify=model_df[classification_target].astype(int),
 )
-random_tree = DecisionTreeClassifier(max_depth=3, min_samples_leaf=8, random_state=RANDOM_STATE)
+random_tree = DecisionTreeClassifier(
+    max_depth=3,
+    min_samples_leaf=8,
+    class_weight="balanced",
+    random_state=RANDOM_STATE,
+)
 random_tree.fit(
     model_df.loc[random_train_idx, classification_features],
     model_df.loc[random_train_idx, classification_target].astype(int),
@@ -1719,7 +1797,12 @@ if {"group_holdout", "random_split"}.issubset(split_metrics.index):
         code("""
 depth_rows = []
 for depth in range(1, 9):
-    depth_model = DecisionTreeClassifier(max_depth=depth, min_samples_leaf=8, random_state=RANDOM_STATE)
+    depth_model = DecisionTreeClassifier(
+        max_depth=depth,
+        min_samples_leaf=8,
+        class_weight="balanced",
+        random_state=RANDOM_STATE,
+    )
     depth_model.fit(X_train, y_train)
     depth_pred = depth_model.predict(X_test)
     depth_rows.append({"max_depth": depth, **classification_metrics(y_test, depth_pred)})
@@ -1854,6 +1937,11 @@ importance.to_frame("importance")
         md("""
 ## Демонстрация риска утечки данных
 
+> **Внимание. АНТИПРИМЕР - НЕ ИСПОЛЬЗОВАТЬ КАК РАБОЧУЮ МОДЕЛЬ.**
+> Этот блок предназначен только для демонстрации утечки данных. Высокие
+> метрики здесь показывают не качество модели, а некорректность набора
+> признаков.
+
 Если в классификацию включить столбцы, из которых непосредственно построена
 целевая переменная, дерево будет воспроизводить правило разметки, а не решать
 независимую прогностическую задачу.
@@ -1870,7 +1958,12 @@ if len(leakage_features) >= 2 and leakage_df[classification_target].nunique() ==
         test_share=0.25,
         target_column=classification_target,
     )
-    leakage_tree = DecisionTreeClassifier(max_depth=3, min_samples_leaf=8, random_state=RANDOM_STATE)
+    leakage_tree = DecisionTreeClassifier(
+        max_depth=3,
+        min_samples_leaf=8,
+        class_weight="balanced",
+        random_state=RANDOM_STATE,
+    )
     leakage_tree.fit(leakage_df.loc[train_idx_l, leakage_features], leakage_df.loc[train_idx_l, classification_target].astype(int))
     leakage_pred = leakage_tree.predict(leakage_df.loc[test_idx_l, leakage_features])
     leakage_metrics = pd.Series(
@@ -1894,7 +1987,12 @@ if not leakage_metrics.empty:
 """),
         code(f"""
 {depth_cell}
-experiment_tree = DecisionTreeClassifier(max_depth=experiment_depth, min_samples_leaf=8, random_state=RANDOM_STATE)
+experiment_tree = DecisionTreeClassifier(
+    max_depth=experiment_depth,
+    min_samples_leaf=8,
+    class_weight="balanced",
+    random_state=RANDOM_STATE,
+)
 experiment_tree.fit(X_train, y_train)
 experiment_pred = experiment_tree.predict(X_test)
 pd.Series(classification_metrics(y_test, experiment_pred), name="experiment")
@@ -1956,7 +2054,14 @@ def build_cells(config: DatasetConfig, lesson: int, teacher: bool) -> list[nbf.N
         raise ValueError(lesson)
 
     if not teacher:
-        return colab_bootstrap_cells() + cells
+        return colab_bootstrap_cells(
+            [
+                config.features_file,
+                config.diagnostics_file,
+                config.metadata_file,
+                "external/external_dataset_index.csv",
+            ]
+        ) + cells
     return cells
 
 

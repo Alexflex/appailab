@@ -19,7 +19,12 @@
 
 ```bash
 source venv/bin/activate
-python scripts/prepare_external_datasets.py
+python scripts/prefetch_data.py
 ```
+
+Скрипт `prefetch_data.py` является преподавательским режимом подготовки:
+он скачивает архивы с повторными попытками, проверяет SHA256-контрольные
+суммы и формирует компактные CSV для блокнотов. На занятии студентам
+достаточно использовать уже подготовленные файлы из `data/processed`.
 
 Kaggle API для расширенных материалов занятий 1-3 не требуется.

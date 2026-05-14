@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.request import urlretrieve
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pandas as pd
@@ -76,11 +79,88 @@ def _safe_mkdir() -> None:
         dataset.raw_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _download_file(url: str, destination: Path) -> None:
+def _sha256_file(path: Path) -> str:
+    """Вычислить SHA256 файла потоковым способом."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download_file(
+    url: str,
+    destination: Path,
+    *,
+    expected_sha256: str | None = None,
+    retries: int = 3,
+    timeout: int = 60,
+) -> None:
+    """Скачать файл с повторными попытками и проверкой контрольной суммы.
+
+    SHA256 (Secure Hash Algorithm 256-bit, криптографическая контрольная
+    сумма) используется здесь не для защиты от злоумышленника, а для
+    воспроизводимости учебной подготовки данных: частично скачанный или
+    измененный файл не должен незаметно попасть в обработку.
+    """
+
     if destination.exists() and destination.stat().st_size > 0:
-        return
+        if expected_sha256 is None or _sha256_file(destination) == expected_sha256:
+            print(f"Файл уже подготовлен: {destination.relative_to(PROJECT_ROOT)}")
+            return
+        print(
+            "Контрольная сумма существующего файла не совпадает, "
+            f"файл будет скачан заново: {destination.relative_to(PROJECT_ROOT)}"
+        )
+
     destination.parent.mkdir(parents=True, exist_ok=True)
-    urlretrieve(url, destination)
+    partial_destination = destination.with_suffix(destination.suffix + ".part")
+    last_error: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            print(
+                f"Загрузка {destination.name}: попытка {attempt} из {retries}."
+            )
+            request = Request(url, headers={"User-Agent": "appai-lab-data-prefetch/1.0"})
+            with urlopen(request, timeout=timeout) as response, partial_destination.open("wb") as file_obj:
+                total = int(response.headers.get("Content-Length") or 0)
+                downloaded = 0
+                next_report = 16 * 1024 * 1024
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    file_obj.write(chunk)
+                    downloaded += len(chunk)
+                    if total and downloaded >= next_report:
+                        print(
+                            f"  получено {downloaded / 1024 / 1024:.1f} "
+                            f"из {total / 1024 / 1024:.1f} МБ"
+                        )
+                        next_report += 16 * 1024 * 1024
+
+            if partial_destination.stat().st_size == 0:
+                raise RuntimeError("скачанный файл имеет нулевой размер")
+            if expected_sha256 is not None:
+                actual_sha256 = _sha256_file(partial_destination)
+                if actual_sha256 != expected_sha256:
+                    raise RuntimeError(
+                        "несовпадение SHA256: "
+                        f"ожидалось {expected_sha256}, получено {actual_sha256}"
+                    )
+            partial_destination.replace(destination)
+            print(f"Файл скачан: {destination.relative_to(PROJECT_ROOT)}")
+            return
+        except (HTTPError, URLError, TimeoutError, OSError, RuntimeError) as exc:
+            last_error = exc
+            if partial_destination.exists():
+                partial_destination.unlink()
+            if attempt < retries:
+                time.sleep(2 * attempt)
+
+    raise RuntimeError(f"Не удалось скачать {url}") from last_error
 
 
 def _extract_zip(archive: Path, target_dir: Path) -> None:
@@ -102,16 +182,19 @@ def download_external_sources() -> None:
     _download_file(
         "https://zenodo.org/api/records/11235562/files/ElectricMotorTemperature_TRAIN.ts/content",
         motor_temperature.raw_dir / "ElectricMotorTemperature_TRAIN.ts",
+        expected_sha256="06b61c5c7ed71feaf4d5516be61c59826fd27f5e1470d7d6d315b27b331336f2",
     )
     _download_file(
         "https://zenodo.org/api/records/11235562/files/ElectricMotorTemperature_TEST.ts/content",
         motor_temperature.raw_dir / "ElectricMotorTemperature_TEST.ts",
+        expected_sha256="29718023ee2fd2c58f8fa989698405131a9679b33d1dbc4fa817b594b89303c7",
     )
 
     zenodo_zip = DATASETS["zenodo_pmsm_inverter_fault"].raw_dir / "PMSM-inverter-fault-diagnosis-3.0.zip"
     _download_file(
         "https://zenodo.org/api/records/14482932/files/PMSM-inverter-fault-diagnosis-3.0.zip/content",
         zenodo_zip,
+        expected_sha256="88d8940ef9606fbb2aaec888e5b08596fe618600e83879fbaf7dfe8763cd6e83",
     )
     _extract_zip(zenodo_zip, DATASETS["zenodo_pmsm_inverter_fault"].raw_dir / "extracted")
 
@@ -119,6 +202,7 @@ def download_external_sources() -> None:
     _download_file(
         "https://data.mendeley.com/public-api/zip/kbwr2z8r3y/download/1",
         mendeley_zip,
+        expected_sha256="a62a72ee2fc223bd251c107aa8edf3ce4c2326f006d1a5cf216492c5ba302298",
     )
     _extract_zip(mendeley_zip, DATASETS["mendeley_ev_powertrain_efficiency"].raw_dir / "extracted")
 
@@ -289,7 +373,9 @@ def prepare_zenodo_motor_temperature() -> bool:
             "Архив содержит стандартизованные временные фрагменты длиной 60 отсчетов и целевую температуру.",
             "Целевая переменная регрессии: `target_temperature_c`.",
             "Целевая переменная классификации: `is_allowed`, производная от квантиля целевой температуры.",
+            "Семантика `is_allowed`: это учебная метка превышения температурного квантиля, а не нормативное разрешение эксплуатации двигателя.",
             "Физические имена каналов в .ts-файлах не заданы, поэтому признаки названы нейтрально: `channel_00_mean`, `channel_01_mean` и далее.",
+            "Интерпретация признаков является преимущественно статистической: без паспортов каналов нельзя делать строгие физические выводы о конкретных датчиках.",
             "Для проверки качества используется групповое разбиение по `profile_id`, сформированному из исходного split и блока строк архива.",
         ],
     )
@@ -359,6 +445,7 @@ def prepare_zenodo_pmsm_inverter_fault() -> bool:
         extra=[
             "Целевая переменная регрессии: `max_bridge_temp_c`.",
             "Целевая переменная классификации: `is_allowed`, где `F0` трактуется как нормальная работа.",
+            "Семантика `is_allowed`: это индикатор исходного кода отказа FDD, а не температурный или энергетический допуск.",
             "`torque_proxy_nm` является расчетным прокси-показателем, полученным из `Power_AC` и фиксированной угловой скорости 10 рад/с; сама скорость не включена в feature-CSV, так как в источнике она не изменяется.",
             "`profile_id` сформирован как сегмент внутри кода отказа, чтобы групповое тестирование включало нормальные и отказные режимы.",
         ],
@@ -451,6 +538,7 @@ def prepare_mendeley_ev_powertrain_efficiency() -> bool:
         extra=[
             "Целевая переменная регрессии: `motor_efficiency`, вынесенная в diagnostics-CSV для защиты feature-CSV от прокси-утечки.",
             "Целевая переменная классификации: `is_allowed`, производная от нижнего квартиля `motor_efficiency`.",
+            "Семантика `is_allowed`: это учебная метка низкого КПД относительно выбранного квартиля, а не признак аварийной опасности.",
             "Компактная выборка намеренно переобогащена точками с `motor_efficiency < 0.995`, чтобы регрессионная задача не вырождалась в прогноз почти постоянной величины.",
             "Для проверки качества используется разбиение по временным сегментам поездок, а не случайное перемешивание соседних точек траектории.",
         ],
