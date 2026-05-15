@@ -44,6 +44,8 @@ class DatasetPaths:
     practice_06_diagnostics: Path
     catalog: Path
     assignments: Path
+    catalog_04_06: Path
+    assignments_04_06: Path
     metadata: Path
 
 
@@ -935,6 +937,8 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
     practice_06_diagnostics = output_path / "practice_06_equipment_modes_diagnostics.csv"
     catalog = output_path / "practice_01_03_dataset_catalog.csv"
     assignments = output_path / "practice_01_03_dataset_assignments.csv"
+    catalog_04_06 = output_path / "practice_04_06_dataset_catalog.csv"
+    assignments_04_06 = output_path / "practice_04_06_dataset_assignments.csv"
     metadata = output_path / "DATASETS.md"
 
     generate_motor_measurements(
@@ -977,6 +981,8 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
 
     dataset_catalog().to_csv(catalog, index=False)
     dataset_assignments().to_csv(assignments, index=False)
+    dataset_catalog_04_06().to_csv(catalog_04_06, index=False)
+    dataset_assignments_04_06().to_csv(assignments_04_06, index=False)
     metadata.write_text(_dataset_metadata_text(), encoding="utf-8")
 
     return DatasetPaths(
@@ -998,6 +1004,8 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
         practice_06_diagnostics=practice_06_diagnostics,
         catalog=catalog,
         assignments=assignments,
+        catalog_04_06=catalog_04_06,
+        assignments_04_06=assignments_04_06,
         metadata=metadata,
     )
 
@@ -1372,6 +1380,184 @@ def dataset_catalog() -> pd.DataFrame:
     result = pd.DataFrame(rows)
     result["implementation_status"] = result["dataset_id"].map(implementation_status).fillna("methodology_only")
     return result
+
+
+def dataset_catalog_04_06() -> pd.DataFrame:
+    """Вернуть реестр открытых источников для методических заданий 4-6."""
+
+    rows = [
+        {
+            "dataset_id": "nasa_cmapss",
+            "name": "C-MAPSS Aircraft Engine Simulator Data",
+            "url": "https://data.nasa.gov/dataset/groups/c-mapss-aircraft-engine-simulator-data",
+            "object": "симулированные траектории деградации авиационного турбовентиляторного двигателя",
+            "license": "NASA Open Data; требуется проверка условий конкретной карточки источника",
+            "access": "NASA Open Data Portal",
+            "size_note": "несколько файлов траекторий; размер зависит от выбранного поднабора FD001-FD004",
+            "format_note": "текстовые таблицы временных рядов",
+            "lessons": "4,6",
+            "base_usage": "мини-задание по временной утечке, регрессии остаточного ресурса и кластеризации режимов деградации",
+            "risk_level": "средний",
+            "risk_note": "нужно разделять train/test по двигателям, а не случайно по строкам; часть сенсоров анонимизирована",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-15",
+        },
+        {
+            "dataset_id": "mendeley_pd_cables_toa",
+            "name": "Partial Discharge Signals in Insulated Power Cables with Time-of-Arrival Annotations",
+            "url": "https://data.mendeley.com/datasets/3mdgxv6zt7",
+            "object": "временные сигналы частичных разрядов в силовых кабелях",
+            "license": "Mendeley Data; требуется проверка лицензии карточки источника",
+            "access": "Mendeley Data",
+            "size_note": "временные ряды напряжения и аннотации времени прихода импульсов",
+            "format_note": "файлы сигналов и таблицы аннотаций",
+            "lessons": "5",
+            "base_usage": "мини-задание по извлечению PRPD-признаков из сырых сигналов перед классификацией",
+            "risk_level": "средний",
+            "risk_note": "нельзя случайно перемешивать импульсы одного измерительного опыта между train и test",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-15",
+        },
+        {
+            "dataset_id": "zenodo_pd_calibrator",
+            "name": "Dataset for New Synthetic Partial Discharge Calibrator",
+            "url": "https://zenodo.org/records/8436197",
+            "object": "сигналы калибратора частичных разрядов",
+            "license": "Zenodo; требуется проверка лицензии версии записи",
+            "access": "Zenodo",
+            "size_note": "архив измерительных файлов; объем зависит от версии записи",
+            "format_note": "сигналы и сопроводительные таблицы",
+            "lessons": "5",
+            "base_usage": "дополнительное задание по сопоставлению калиброванных импульсов и извлеченных признаков",
+            "risk_level": "низкий",
+            "risk_note": "источник ближе к метрологической проверке, чем к классификации реальных дефектов",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-15",
+        },
+        {
+            "dataset_id": "uci_ai4i_2020",
+            "name": "AI4I 2020 Predictive Maintenance Dataset",
+            "url": "https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset",
+            "object": "синтетические, но промышленно мотивированные режимы оборудования и отказы",
+            "license": "UCI Machine Learning Repository; требуется проверка карточки источника",
+            "access": "UCI Machine Learning Repository",
+            "size_note": "10 000 наблюдений по карточке UCI",
+            "format_note": "CSV",
+            "lessons": "6",
+            "base_usage": "мини-задание по отделению сенсорных признаков от служебных кодов, классов отказов и диагностической разметки",
+            "risk_level": "средний",
+            "risk_note": "столбцы отказов нельзя включать в признаки кластеризации; `Product ID` является служебным кодом",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-15",
+        },
+        {
+            "dataset_id": "nasa_pcoe_adapt",
+            "name": "NASA PCoE ADAPT Diagnostic Data",
+            "url": "https://www.nasa.gov/content/prognostics-center-of-excellence-data-set-repository",
+            "object": "диагностические данные испытательного стенда электропитания ADAPT",
+            "license": "NASA PCoE; требуется проверка условий конкретного архива",
+            "access": "NASA Prognostics Center of Excellence",
+            "size_note": "наборы стендовых сценариев и отказов; объем зависит от выбранного архива",
+            "format_note": "таблицы временных рядов и журналы событий",
+            "lessons": "6",
+            "base_usage": "расширение по кластеризации режимов и отделению сенсорных каналов от событий отказа",
+            "risk_level": "высокий",
+            "risk_note": "сложная структура файлов; требуется предварительная нормализация временных шкал и событий",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-15",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def dataset_assignments_04_06() -> pd.DataFrame:
+    """Сформировать развернутые задания по открытым источникам для занятий 4-6."""
+
+    catalog = dataset_catalog_04_06()
+    rows: list[dict[str, str]] = []
+    for row in catalog.to_dict(orient="records"):
+        lessons = str(row["lessons"]).split(",")
+        for lesson in lessons:
+            lesson = lesson.strip()
+            if lesson == "4":
+                title = f"Тепловая или ресурсная регрессия: {row['name']}"
+                theory = (
+                    "Опишите, какая непрерывная величина может быть целевой "
+                    "переменной: температура, остаточный ресурс, показатель "
+                    "деградации или ошибка физической модели. Объясните риск "
+                    "временной утечки, когда соседние точки одного агрегата "
+                    "попадают одновременно в train и test."
+                )
+                practice = (
+                    "Выберите подмножество сенсорных признаков, задайте правило "
+                    "разбиения по агрегату или профилю, предложите базовую "
+                    "регрессионную модель и метрики MAE/RMSE. Не требуется "
+                    "скачивать полный архив в аудитории."
+                )
+                visuals = "профиль целевой переменной по времени; распределение остаточного ресурса; график остатков"
+                questions = "Что является агрегатом? Почему случайное разбиение строк опасно? Какие признаки доступны до прогноза?"
+            elif lesson == "5":
+                title = f"Извлечение PRPD-признаков и классификация: {row['name']}"
+                theory = (
+                    "Опишите переход от сырого временного сигнала к признакам "
+                    "частичных разрядов: амплитуда, энергия, число импульсов, "
+                    "фазовое положение и кажущийся заряд. Укажите, какие "
+                    "операции нужны до обучения классификатора."
+                )
+                practice = (
+                    "Предложите минимальный набор признаков, целевую переменную "
+                    "для классификации и схему разделения измерительных опытов. "
+                    "Отдельно укажите, какие аннотации нельзя использовать как "
+                    "обычные признаки."
+                )
+                visuals = "пример временного сигнала; гистограмма амплитуд; PRPD-диаграмма; матрица ошибок"
+                questions = "Что такое наблюдение: импульс, окно или опыт? Какие аннотации создают утечку? Почему нужно фиксировать частоту дискретизации?"
+            else:
+                title = f"Кластеризация режимов и отделение диагностической разметки: {row['name']}"
+                theory = (
+                    "Опишите постановку обучения без учителя: сенсорные признаки "
+                    "используются до обучения, а коды отказов и служебные метки "
+                    "подключаются только после кластеризации для интерпретации."
+                )
+                practice = (
+                    "Разделите столбцы на сенсорные, служебные и диагностические, "
+                    "предложите k-means/PCA или DBSCAN, сформулируйте правило "
+                    "инженерного описания найденных групп."
+                )
+                visuals = "тепловая карта корреляций; PCA-проекция; профиль кластеров; сопоставление с отказами после обучения"
+                questions = "Почему отказ нельзя использовать как признак? Как выбрать число кластеров? Что означает шум DBSCAN?"
+
+            rows.append(
+                {
+                    "assignment_id": f"{row['dataset_id']}_lesson_{lesson}",
+                    "dataset_id": str(row["dataset_id"]),
+                    "lesson": lesson,
+                    "assignment_title": title,
+                    "implementation_status": str(row["implementation_status"]),
+                    "theory_block": theory,
+                    "practice_block": practice,
+                    "expected_artifacts": (
+                        "Краткий паспорт источника, таблица ролей столбцов, "
+                        "перечень рисков утечки данных, 2-3 рекомендуемые "
+                        "визуализации и вывод о применимости источника для "
+                        f"занятия {lesson}."
+                    ),
+                    "dataset_structure": (
+                        f"Объект: {row['object']}. Формат: {row['format_note']}. "
+                        f"Доступ: {row['access']}. Размер: {row['size_note']}. "
+                        f"Проверено: {row['checked_at']}."
+                    ),
+                    "minimum_working_subset": "Для аудиторного задания достаточно описать 500-5000 строк или 3-5 агрегатов/профилей.",
+                    "target_rule": "Цель определяется студентом по постановке источника; запрещено использовать производные диагностические метки как признаки.",
+                    "split_rule": "При временной или агрегатной структуре использовать разбиение по агрегату, профилю или опыту, а не случайно по строкам.",
+                    "success_criteria": "Зачет: корректно определены роли столбцов, указаны риски утечки, предложены метрики и визуализации.",
+                    "recommended_visualizations": visuals,
+                    "control_questions": questions,
+                    "risk_note": str(row["risk_note"]),
+                    "methodical_note": str(row["base_usage"]),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _minimum_working_subset(dataset_id: str, format_note: str, size_note: str) -> str:
@@ -1769,6 +1955,11 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
    разметка режимов, флаг аномалии и показатель технического состояния.
    Эти данные можно использовать только после построения кластеров для
    интерпретации результата.
+15. `practice_04_06_dataset_catalog.csv` - реестр открытых источников для
+   расширенных методических заданий занятий 4-6.
+16. `practice_04_06_dataset_assignments.csv` - развернутые задания по
+   открытому источнику: постановка, риски утечки, рекомендуемые
+   визуализации и критерии успешного выполнения.
 
 ## Важное различие распределений КПД
 

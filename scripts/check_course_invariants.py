@@ -23,6 +23,8 @@ NOTEBOOKS_STUDENT = PROJECT_ROOT / "notebooks" / "student"
 NOTEBOOKS_TEACHER = PROJECT_ROOT / "notebooks" / "teacher"
 NOTEBOOKS_EXTERNAL_STUDENT = PROJECT_ROOT / "notebooks" / "external" / "student"
 NOTEBOOKS_EXTERNAL_TEACHER = PROJECT_ROOT / "notebooks" / "external" / "teacher"
+SLIDES_DIR = PROJECT_ROOT / "docs" / "slides"
+TEACHER_GUIDES_DIR = PROJECT_ROOT / "docs" / "teacher_guides"
 
 
 REGRESSION_STRICT_FEATURES = {
@@ -259,18 +261,58 @@ def _check_student_notebooks_clear_outputs() -> None:
             assert "Предупреждение о пересчете целевой переменной" in notebook_source, (
                 "В занятии 1 нет предупреждения о пересчете efficiency после imputation."
             )
+        if path.name.startswith(("04_", "05_", "06_")):
+            assert notebook_source.count("TODO") >= 4, (
+                f"В занятии {path.name[:2]} недостаточно контролируемых TODO-заданий."
+            )
+            for fragment in [
+                "Источники и проверка актуальности",
+                "Реестр найденных наборов данных и развернутые задания",
+                "Индивидуальное расширенное задание",
+                "practice_04_06_dataset_catalog.csv",
+                "practice_04_06_dataset_assignments.csv",
+            ]:
+                assert fragment in notebook_source, (
+                    f"В студенческом блокноте {path.name} нет обязательного раздела или файла: {fragment}"
+                )
         if path.name.startswith("04_"):
             assert "GradientBoostingRegressor" in notebook_source and "АНТИПРИМЕР" in notebook_source, (
                 "В занятии 4 нет ансамблевой модели или антипримера утечки."
             )
+            required_fragments = {
+                "permutation_importance": "перестановочная важность признаков",
+                "Профили температуры обмотки во времени": "профили температуры во времени",
+                "group_holdout": "сравнение случайного и группового разбиения",
+                "NASA C-MAPSS": "мини-задание по открытому источнику",
+            }
+            for fragment, description in required_fragments.items():
+                assert fragment in notebook_source, f"В занятии 4 нет блока: {description}."
         if path.name.startswith("05_"):
             assert "SVC" in notebook_source and "risk_score" in notebook_source, (
                 "В занятии 5 нет SVM или демонстрации утечки risk_score."
             )
+            required_fragments = {
+                "PRPD": "теория и схема PRPD",
+                "SVM без масштабирования": "антипример SVM без масштабирования",
+                "error_summary": "разбор диагностических ошибок",
+                "imbalance_metrics": "сравнение balanced и imbalanced выборок",
+                "Mendeley Data": "мини-задание по открытому источнику",
+            }
+            for fragment, description in required_fragments.items():
+                assert fragment in notebook_source, f"В занятии 5 нет блока: {description}."
         if path.name.startswith("06_"):
             assert "KMeans" in notebook_source and "DBSCAN" in notebook_source and "GaussianMixture" in notebook_source, (
                 "В занятии 6 нет сравнения базовых алгоритмов кластеризации."
             )
+            required_fragments = {
+                "PCA biplot": "PCA biplot",
+                "cluster_profile_scaled": "профили кластеров",
+                "dbscan_noise_count": "разбор DBSCAN-шумов",
+                "diagnostics_usage_explanation": "пояснение запрета diagnostics до кластеризации",
+                "UCI AI4I 2020": "мини-задание по открытому источнику",
+            }
+            for fragment, description in required_fragments.items():
+                assert fragment in notebook_source, f"В занятии 6 нет блока: {description}."
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
@@ -290,6 +332,8 @@ def _check_teacher_notebooks_04_06_executed() -> None:
 def _check_dataset_catalog_status() -> None:
     catalog = _read_csv("practice_01_03_dataset_catalog.csv")
     assignments = _read_csv("practice_01_03_dataset_assignments.csv")
+    catalog_04_06 = _read_csv("practice_04_06_dataset_catalog.csv")
+    assignments_04_06 = _read_csv("practice_04_06_dataset_assignments.csv")
     assert "implementation_status" in catalog.columns, "В каталоге нет implementation_status."
     assert "implementation_status" in assignments.columns, "В assignments нет implementation_status."
     ready_rows = catalog[catalog["implementation_status"] == "external_notebook_ready"]
@@ -300,6 +344,19 @@ def _check_dataset_catalog_status() -> None:
     assert assignments["implementation_status"].isin(
         {"external_notebook_ready", "methodology_only", "planned"}
     ).all(), "В assignments найден неизвестный implementation_status."
+    assert catalog_04_06.shape[0] >= 5, "В каталоге 4-6 слишком мало открытых источников."
+    assert assignments_04_06.shape[0] >= 5, "В assignments 4-6 слишком мало заданий."
+    assert set(catalog_04_06["implementation_status"]) == {"methodology_only"}, (
+        "Каталог 4-6 должен явно маркировать источники как methodology_only."
+    )
+    assert set(assignments_04_06["lesson"].astype(str)).issuperset({"4", "5", "6"}), (
+        "В assignments 4-6 должны быть задания для занятий 4, 5 и 6."
+    )
+    research_path = PROJECT_ROOT / "docs" / "sources" / "datasets_04_06_research.md"
+    assert research_path.exists(), "Не найден docs/sources/datasets_04_06_research.md."
+    research_text = research_path.read_text(encoding="utf-8")
+    for fragment in ["NASA C-MAPSS", "Partial Discharge", "UCI AI4I 2020"]:
+        assert fragment in research_text, f"В исследовании источников 4-6 нет фрагмента: {fragment}"
 
 
 def _check_external_datasets() -> None:
@@ -477,6 +534,56 @@ def _check_external_notebooks() -> None:
                 )
 
 
+def _check_teacher_guides_04_06_structure() -> None:
+    required_sections = [
+        "## Термины для обязательного пояснения",
+        "## Математическая основа",
+        "## Конкретизация задания для студентов",
+        "## Распределение времени",
+        "## Критерий зачета",
+        "## Расширенные блокноты по открытым данным",
+    ]
+    for path in sorted(TEACHER_GUIDES_DIR.glob("0[4-6]_*.md")):
+        text = path.read_text(encoding="utf-8")
+        for section in required_sections:
+            assert section in text, f"В методичке {path.name} нет раздела: {section}"
+    guide = TEACHER_GUIDES_DIR / "visualization_and_explanation_guide_04_06.md"
+    assert guide.exists(), "Не найден visualization_and_explanation_guide_04_06.md."
+
+
+def _check_slides_04_06_structure_and_images() -> None:
+    image_refs: set[Path] = set()
+    for path in sorted(SLIDES_DIR.glob("0[4-6]_*.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "## Распределение времени занятия" in text, (
+            f"В слайдах {path.name} нет таблицы распределения времени."
+        )
+        assert text.count("<!-- _class: section -->") >= 3, (
+            f"В слайдах {path.name} недостаточно section-разделов."
+        )
+        speaker_notes = [
+            block
+            for block in re.findall(r"<!--(.*?)-->", text, flags=re.DOTALL)
+            if "_class:" not in block
+        ]
+        assert len(speaker_notes) >= 10, (
+            f"В слайдах {path.name} слишком мало заметок докладчика: {len(speaker_notes)}."
+        )
+        for image_ref in re.findall(r"!\[[^\]]*\]\((img/[^)]+)\)", text):
+            image_path = (SLIDES_DIR / image_ref).resolve()
+            assert image_path.exists(), f"В слайдах {path.name} ссылка на отсутствующее изображение: {image_ref}"
+            image_refs.add(image_path)
+
+    tracked_prefixes = ("04_", "05_", "06_")
+    existing_images = {
+        path.resolve()
+        for path in (SLIDES_DIR / "img").glob("*.png")
+        if path.name.startswith(tracked_prefixes)
+    }
+    orphan_images = sorted(path.name for path in existing_images - image_refs)
+    assert not orphan_images, f"В docs/slides/img есть неиспользуемые изображения 4-6: {orphan_images}"
+
+
 def main() -> None:
     _check_practice_01()
     _check_practice_02()
@@ -489,6 +596,8 @@ def main() -> None:
     _check_dataset_catalog_status()
     _check_external_datasets()
     _check_external_notebooks()
+    _check_teacher_guides_04_06_structure()
+    _check_slides_04_06_structure_and_images()
     print("Инварианты курса для занятий 1-6 соблюдены.")
 
 

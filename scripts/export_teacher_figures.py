@@ -52,6 +52,8 @@ def export() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     summary: dict[str, list[str]] = {}
     for tag, path in NOTEBOOKS.items():
+        for old_image in OUTPUT_DIR.glob(f"{tag}_*.png"):
+            old_image.unlink()
         nb = nbformat.read(path, as_version=4)
         counter = 0
         saved: list[str] = []

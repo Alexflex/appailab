@@ -35,6 +35,8 @@ def main() -> None:
     print(f"- {paths.practice_06_diagnostics}")
     print(f"- {paths.catalog}")
     print(f"- {paths.assignments}")
+    print(f"- {paths.catalog_04_06}")
+    print(f"- {paths.assignments_04_06}")
     print(f"- {paths.metadata}")
 
 
