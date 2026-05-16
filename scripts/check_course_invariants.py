@@ -549,6 +549,18 @@ def _check_teacher_guides_04_06_structure() -> None:
             assert section in text, f"В методичке {path.name} нет раздела: {section}"
     guide = TEACHER_GUIDES_DIR / "visualization_and_explanation_guide_04_06.md"
     assert guide.exists(), "Не найден visualization_and_explanation_guide_04_06.md."
+    guide_text = guide.read_text(encoding="utf-8")
+    assert len(guide_text.splitlines()) >= 180, (
+        "visualization_and_explanation_guide_04_06.md недостаточно подробен."
+    )
+    for fragment in [
+        "Сценарий объяснения графиков занятия 4",
+        "Сценарий объяснения графиков занятия 5",
+        "Сценарий объяснения графиков занятия 6",
+        "Стратегии вмешательства преподавателя",
+        "Единая форма короткого вывода",
+    ]:
+        assert fragment in guide_text, f"В guide 04-06 нет раздела: {fragment}"
 
 
 def _check_slides_04_06_structure_and_images() -> None:
@@ -558,6 +570,18 @@ def _check_slides_04_06_structure_and_images() -> None:
         assert "## Распределение времени занятия" in text, (
             f"В слайдах {path.name} нет таблицы распределения времени."
         )
+        for fragment in ["## Содержательная постановка задачи", "## Формальная постановка задачи", "## Практическое задание"]:
+            assert fragment in text, f"В слайдах {path.name} нет блока: {fragment}"
+        if path.name.startswith("05_"):
+            assert "## Антипример: SVM без масштабирования" in text, (
+                "В слайдах занятия 5 нет отдельного антипримера SVM без масштабирования."
+            )
+        if path.name.startswith("04_"):
+            for fragment in ["## Ridge-регрессия", "## Случайный лес", "## Градиентный бустинг"]:
+                assert fragment in text, f"В слайдах занятия 4 нет теоретического блока: {fragment}"
+        if path.name.startswith("06_"):
+            for fragment in ["## Целевая функция k-means", "## DBSCAN и Gaussian Mixture"]:
+                assert fragment in text, f"В слайдах занятия 6 нет теоретического блока: {fragment}"
         assert text.count("<!-- _class: section -->") >= 3, (
             f"В слайдах {path.name} недостаточно section-разделов."
         )
