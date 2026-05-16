@@ -72,6 +72,9 @@ Google Colab - облачная среда выполнения Jupyter Notebook
 | 04 | Прогноз температуры электропривода HAPS | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/04_haps_thermal_modeling_student.ipynb) |
 | 05 | Классификация частичных разрядов | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/05_partial_discharge_classification_student.ipynb) |
 | 06 | Кластеризация режимов оборудования | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/06_equipment_modes_clustering_student.ipynb) |
+| 07 | Анализ сигналов частичных разрядов | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/07_pd_signal_analysis_student.ipynb) |
+| 08 | Расчет режима энергосистемы в pandapower | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/08_pandapower_power_flow_student.ipynb) |
+| 09 | Сравнение методов расчета режима | [Открыть в Colab](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/09_power_flow_comparison_student.ipynb) |
 
 ### 3.2. Расширенные задания по открытым данным
 

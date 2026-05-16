@@ -26,6 +26,9 @@ NOTEBOOKS = {
     "04": PROJECT_ROOT / "notebooks/teacher/04_haps_thermal_modeling_teacher.ipynb",
     "05": PROJECT_ROOT / "notebooks/teacher/05_partial_discharge_classification_teacher.ipynb",
     "06": PROJECT_ROOT / "notebooks/teacher/06_equipment_modes_clustering_teacher.ipynb",
+    "07": PROJECT_ROOT / "notebooks/teacher/07_pd_signal_analysis_teacher.ipynb",
+    "08": PROJECT_ROOT / "notebooks/teacher/08_pandapower_power_flow_teacher.ipynb",
+    "09": PROJECT_ROOT / "notebooks/teacher/09_power_flow_comparison_teacher.ipynb",
 }
 OUTPUT_DIR = PROJECT_ROOT / "docs/slides/img"
 

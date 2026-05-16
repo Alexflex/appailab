@@ -1,6 +1,6 @@
 """Генераторы учебных инженерных наборов данных.
 
-Модуль используется в практических занятиях 1-6. Он формирует небольшие
+Модуль используется в практических занятиях 1-9. Он формирует небольшие
 таблицы, которые можно обрабатывать в аудитории за ограниченное время.
 
 Методическое допущение:
@@ -42,10 +42,21 @@ class DatasetPaths:
     practice_06: Path
     practice_06_features: Path
     practice_06_diagnostics: Path
+    practice_07_features: Path
+    practice_07_diagnostics: Path
+    practice_07_waveforms: Path
+    practice_08_features: Path
+    practice_08_diagnostics: Path
+    practice_08_scenarios: Path
+    practice_09: Path
+    practice_09_features: Path
+    practice_09_diagnostics: Path
     catalog: Path
     assignments: Path
     catalog_04_06: Path
     assignments_04_06: Path
+    catalog_07_09: Path
+    assignments_07_09: Path
     metadata: Path
 
 
@@ -676,6 +687,379 @@ def generate_equipment_modes_dataset(
     return _round_engineering_columns(result)
 
 
+def generate_pd_signal_analysis_dataset(
+    n_per_class: int = 80,
+    n_points: int = 128,
+    random_state: int = RANDOM_SEED + 7,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Сформировать учебные сигналы частичных разрядов и признаки.
+
+    Частичный разряд (partial discharge, PD) моделируется как короткий
+    экспоненциальный импульс на фоне измерительного шума. Для занятия 7
+    сохраняются две формы представления: длинная таблица отсчетов сигнала и
+    компактная таблица признаков. Такой формат позволяет студенту увидеть
+    переход от временного сигнала к признаковому описанию.
+    """
+
+    rng = np.random.default_rng(random_state)
+    sampling_rate_hz = 2_000_000.0
+    dt_s = 1.0 / sampling_rate_hz
+    time_s = np.arange(n_points) * dt_s
+    class_specs = [
+        ("normal", 0, 0.018, (0, 1), 0.00, 0.0),
+        ("rare_pd", 1, 0.022, (1, 3), 0.33, 0.0),
+        ("frequent_pd", 2, 0.026, (4, 8), 0.56, 0.0),
+        ("noisy", 3, 0.060, (0, 2), 0.20, 0.0),
+        ("external_interference", 4, 0.030, (0, 2), 0.10, 240_000.0),
+    ]
+    feature_rows: list[dict[str, float | int | str]] = []
+    diagnostic_rows: list[dict[str, float | int | str]] = []
+    waveform_rows: list[dict[str, float | int | str]] = []
+    sample_id = 1
+
+    for label, code, noise_std, pulse_range, pd_probability, interference_freq_hz in class_specs:
+        for _ in range(n_per_class):
+            profile_id = int(rng.integers(1, 9))
+            baseline = rng.normal(0.0, noise_std, n_points)
+            low_freq = 0.010 * np.sin(2.0 * np.pi * rng.uniform(8_000.0, 18_000.0) * time_s)
+            signal = baseline + low_freq
+            pulse_count = int(rng.integers(pulse_range[0], pulse_range[1] + 1))
+            if rng.random() > pd_probability and label in {"normal", "noisy", "external_interference"}:
+                pulse_count = 0
+
+            pulse_positions: list[int] = []
+            for _pulse in range(pulse_count):
+                center = int(rng.integers(12, n_points - 16))
+                pulse_positions.append(center)
+                amplitude = rng.uniform(0.18, 0.42) * (1.0 + 0.35 * code)
+                sign = rng.choice([-1.0, 1.0], p=[0.35, 0.65])
+                decay = np.exp(-np.arange(0, 18) / rng.uniform(2.4, 5.2))
+                end = min(n_points, center + len(decay))
+                signal[center:end] += sign * amplitude * decay[: end - center]
+
+            if interference_freq_hz > 0:
+                signal += 0.16 * np.sin(2.0 * np.pi * interference_freq_hz * time_s + rng.uniform(0.0, 2.0 * np.pi))
+
+            fft_values = np.fft.rfft(signal)
+            frequencies_hz = np.fft.rfftfreq(n_points, d=dt_s)
+            spectrum = np.abs(fft_values)
+            spectrum[0] = 0.0
+            dominant_index = int(np.argmax(spectrum))
+            dominant_freq_khz = frequencies_hz[dominant_index] / 1_000.0
+            spectral_centroid_khz = float(
+                np.sum(frequencies_hz * spectrum) / max(np.sum(spectrum), 1e-12) / 1_000.0
+            )
+            energy = float(np.sum(signal**2) * dt_s)
+            rms = float(np.sqrt(np.mean(signal**2)))
+            max_abs = float(np.max(np.abs(signal)))
+            threshold = max(0.08, 4.0 * noise_std)
+            pulse_count_est = int(np.sum(np.abs(signal) > threshold))
+            noise_power = noise_std**2
+            signal_power = max(float(np.mean(signal**2)) - noise_power, 1e-12)
+            snr_db = float(10.0 * np.log10(signal_power / max(noise_power, 1e-12)))
+
+            feature_rows.append(
+                {
+                    "sample_id": sample_id,
+                    "profile_id": profile_id,
+                    "sampling_rate_hz": sampling_rate_hz,
+                    "window_duration_us": n_points * dt_s * 1_000_000.0,
+                    "max_abs_voltage_v": max_abs,
+                    "rms_voltage_v": rms,
+                    "signal_energy": energy,
+                    "pulse_count_est": pulse_count_est,
+                    "dominant_freq_khz": dominant_freq_khz,
+                    "spectral_centroid_khz": spectral_centroid_khz,
+                    "snr_db": snr_db,
+                    "condition_class": label,
+                }
+            )
+            diagnostic_rows.append(
+                {
+                    "sample_id": sample_id,
+                    "state_code": code,
+                    "direct_state_label": label,
+                    "true_pulse_count": pulse_count,
+                    "noise_std_v": noise_std,
+                    "interference_freq_khz": interference_freq_hz / 1_000.0,
+                    "first_pulse_index": pulse_positions[0] if pulse_positions else -1,
+                    "leakage_pd_indicator": int(label in {"rare_pd", "frequent_pd"}),
+                }
+            )
+            for point_index, value in enumerate(signal):
+                waveform_rows.append(
+                    {
+                        "sample_id": sample_id,
+                        "profile_id": profile_id,
+                        "condition_class": label,
+                        "point_index": point_index,
+                        "time_us": time_s[point_index] * 1_000_000.0,
+                        "voltage_v": float(value),
+                    }
+                )
+            sample_id += 1
+
+    features = pd.DataFrame(feature_rows).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    id_order = {old_id: new_id for new_id, old_id in enumerate(features["sample_id"], start=1)}
+    features["sample_id"] = np.arange(1, len(features) + 1)
+
+    diagnostics = pd.DataFrame(diagnostic_rows)
+    diagnostics["sample_id"] = diagnostics["sample_id"].map(id_order)
+    diagnostics = diagnostics.sort_values("sample_id").reset_index(drop=True)
+
+    waveforms = pd.DataFrame(waveform_rows)
+    waveforms["sample_id"] = waveforms["sample_id"].map(id_order)
+    waveforms = waveforms.sort_values(["sample_id", "point_index"]).reset_index(drop=True)
+
+    return (
+        _round_engineering_columns(features),
+        _round_engineering_columns(diagnostics),
+        _round_engineering_columns(waveforms),
+    )
+
+
+def _create_power_flow_network(scenario: dict[str, float]):
+    """Создать 6-узловую учебную сеть pandapower для одного сценария."""
+
+    try:
+        import pandapower as pp
+    except ImportError as exc:  # pragma: no cover - проверяется окружением
+        raise ImportError(
+            "Для занятий 8-9 требуется pandapower. Установите requirements-extended.txt "
+            "или requirements-colab.txt."
+        ) from exc
+
+    net = pp.create_empty_network(sn_mva=100.0)
+    for name in ["Grid", "Bus 1", "Bus 2", "Bus 3", "Bus 4", "Bus 5"]:
+        pp.create_bus(net, vn_kv=110.0, name=name)
+    pp.create_ext_grid(net, bus=0, vm_pu=1.02, name="External grid")
+    pp.create_gen(
+        net,
+        bus=3,
+        p_mw=float(scenario["generator_p_mw"]),
+        vm_pu=float(scenario["generator_vm_pu"]),
+        name="Distributed generator",
+    )
+    line_specs = [
+        (0, 1, 18.0),
+        (1, 2, 22.0),
+        (1, 3, 16.0),
+        (2, 4, 20.0),
+        (3, 4, 14.0),
+        (4, 5, 18.0),
+        (2, 5, 25.0),
+    ]
+    for index, (from_bus, to_bus, length_km) in enumerate(line_specs, start=1):
+        pp.create_line_from_parameters(
+            net,
+            from_bus=from_bus,
+            to_bus=to_bus,
+            length_km=length_km,
+            r_ohm_per_km=0.08,
+            x_ohm_per_km=0.32,
+            c_nf_per_km=11.0,
+            max_i_ka=0.45,
+            name=f"Line {index}",
+        )
+    for bus in [2, 3, 4, 5]:
+        pp.create_load(
+            net,
+            bus=bus,
+            p_mw=float(scenario[f"load_bus_{bus}_mw"]),
+            q_mvar=float(scenario[f"load_bus_{bus}_mvar"]),
+            name=f"Load bus {bus}",
+        )
+    return net
+
+
+def _run_power_flow_scenario(scenario: dict[str, float]) -> dict[str, float | int | str]:
+    """Выполнить AC- и DC-расчет для одного сценария сети."""
+
+    import logging
+    import pandapower as pp
+
+    logging.getLogger("pandapower").setLevel(logging.ERROR)
+    net = _create_power_flow_network(scenario)
+    pp.runpp(net, algorithm="nr", init="flat", numba=False)
+    ac_bus_vm = net.res_bus["vm_pu"].to_numpy()
+    ac_bus_va = net.res_bus["va_degree"].to_numpy()
+    ac_line_p = net.res_line["p_from_mw"].to_numpy()
+    ac_line_loading = net.res_line["loading_percent"].to_numpy()
+    ac_losses_mw = float(net.res_line["pl_mw"].sum())
+
+    net_dc = _create_power_flow_network(scenario)
+    pp.rundcpp(net_dc, numba=False)
+    dc_line_p = net_dc.res_line["p_from_mw"].to_numpy()
+    dc_line_loading = net_dc.res_line["loading_percent"].to_numpy()
+    line_abs_error = np.abs(ac_line_p - dc_line_p)
+
+    result: dict[str, float | int | str] = {
+        "scenario_id": int(scenario["scenario_id"]),
+        "scenario_label": str(scenario["scenario_label"]),
+        "total_load_mw": float(sum(scenario[f"load_bus_{bus}_mw"] for bus in [2, 3, 4, 5])),
+        "total_reactive_load_mvar": float(sum(scenario[f"load_bus_{bus}_mvar"] for bus in [2, 3, 4, 5])),
+        "min_vm_pu": float(ac_bus_vm.min()),
+        "max_line_loading_percent": float(ac_line_loading.max()),
+        "total_line_loss_mw": ac_losses_mw,
+        "weak_bus": int(np.argmin(ac_bus_vm)),
+        "critical_line": int(np.argmax(ac_line_loading) + 1),
+        "mean_abs_line_error_mw": float(line_abs_error.mean()),
+        "max_abs_line_error_mw": float(line_abs_error.max()),
+        "mean_relative_line_error_percent": float(
+            100.0 * np.mean(line_abs_error / np.maximum(np.abs(ac_line_p), 1e-6))
+        ),
+    }
+    for index, value in enumerate(ac_bus_vm):
+        result[f"bus_{index}_vm_pu"] = float(value)
+    for index, value in enumerate(ac_bus_va):
+        result[f"bus_{index}_va_degree"] = float(value)
+    for index, value in enumerate(ac_line_p, start=1):
+        result[f"ac_line_{index}_p_mw"] = float(value)
+    for index, value in enumerate(ac_line_loading, start=1):
+        result[f"ac_line_{index}_loading_percent"] = float(value)
+    for index, value in enumerate(dc_line_p, start=1):
+        result[f"dc_line_{index}_p_mw"] = float(value)
+    for index, value in enumerate(dc_line_loading, start=1):
+        result[f"dc_line_{index}_loading_percent"] = float(value)
+    for index, value in enumerate(line_abs_error, start=1):
+        result[f"line_{index}_abs_error_mw"] = float(value)
+    return result
+
+
+def generate_power_flow_scenario_dataset(
+    n_scenarios: int = 120,
+    random_state: int = RANDOM_SEED + 8,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Сформировать сценарии и результаты расчета 6-узловой сети.
+
+    Возвращает таблицы для занятий 8 и 9. Одна строка соответствует одному
+    сценарию нагрузки и генерации. Диагностические столбцы с AC/DC-результатами
+    отделяются от feature-CSV, поскольку они могут создать утечку в
+    суррогатной модели занятия 9.
+    """
+
+    rng = np.random.default_rng(random_state)
+    base_loads = {
+        2: (32.0, 11.0),
+        3: (24.0, 8.0),
+        4: (28.0, 10.0),
+        5: (18.0, 6.0),
+    }
+    scenario_rows: list[dict[str, float | int | str]] = []
+    for scenario_id in range(1, n_scenarios + 1):
+        load_scale = float(rng.uniform(0.72, 1.38))
+        if scenario_id == 1:
+            label = "base"
+            load_scale = 1.0
+            generator_scale = 1.0
+        elif scenario_id % 5 == 0:
+            label = "high_load"
+            load_scale = float(rng.uniform(1.12, 1.45))
+            generator_scale = float(rng.uniform(0.82, 1.05))
+        elif scenario_id % 7 == 0:
+            label = "low_generation"
+            generator_scale = float(rng.uniform(0.55, 0.80))
+        elif scenario_id % 11 == 0:
+            label = "redistributed_load"
+            generator_scale = float(rng.uniform(0.90, 1.20))
+        else:
+            label = "random_operating_point"
+            generator_scale = float(rng.uniform(0.70, 1.30))
+
+        row: dict[str, float | int | str] = {
+            "scenario_id": scenario_id,
+            "scenario_label": label,
+            "load_scale": load_scale,
+            "generator_p_mw": 35.0 * generator_scale + rng.normal(0.0, 1.2),
+            "generator_vm_pu": float(rng.uniform(1.000, 1.030)),
+        }
+        if scenario_id == 1:
+            row["generator_p_mw"] = 35.0
+            row["generator_vm_pu"] = 1.01
+        for bus, (p_base, q_base) in base_loads.items():
+            local_factor = float(np.clip(rng.normal(1.0, 0.08), 0.78, 1.22))
+            if label == "redistributed_load" and bus in {4, 5}:
+                local_factor *= 1.18
+            row[f"load_bus_{bus}_mw"] = max(4.0, p_base * load_scale * local_factor)
+            row[f"load_bus_{bus}_mvar"] = max(1.0, q_base * load_scale * local_factor * rng.uniform(0.92, 1.12))
+        scenario_rows.append(row)
+
+    scenarios = _round_engineering_columns(pd.DataFrame(scenario_rows))
+    result_rows = [_run_power_flow_scenario(row) for row in scenarios.to_dict(orient="records")]
+    results = _round_engineering_columns(pd.DataFrame(result_rows))
+    merged = scenarios.merge(results, on=["scenario_id", "scenario_label"], how="left", validate="one_to_one")
+
+    practice_08_features = merged[
+        [
+            "scenario_id",
+            "scenario_label",
+            "total_load_mw",
+            "total_reactive_load_mvar",
+            "generator_p_mw",
+            "generator_vm_pu",
+            "min_vm_pu",
+            "max_line_loading_percent",
+            "total_line_loss_mw",
+            "weak_bus",
+            "critical_line",
+        ]
+    ].copy()
+    practice_08_diagnostics = merged[
+        ["scenario_id"]
+        + [f"bus_{index}_vm_pu" for index in range(6)]
+        + [f"bus_{index}_va_degree" for index in range(6)]
+        + [f"ac_line_{index}_p_mw" for index in range(1, 8)]
+        + [f"ac_line_{index}_loading_percent" for index in range(1, 8)]
+    ].copy()
+    practice_08_diagnostics["voltage_violation"] = (practice_08_features["min_vm_pu"] < 0.97).astype(int)
+    practice_08_diagnostics["line_overload"] = (
+        practice_08_features["max_line_loading_percent"] > 100.0
+    ).astype(int)
+
+    input_columns = [
+        "scenario_id",
+        "scenario_label",
+        "load_scale",
+        "generator_p_mw",
+        "generator_vm_pu",
+        "load_bus_2_mw",
+        "load_bus_2_mvar",
+        "load_bus_3_mw",
+        "load_bus_3_mvar",
+        "load_bus_4_mw",
+        "load_bus_4_mvar",
+        "load_bus_5_mw",
+        "load_bus_5_mvar",
+    ]
+    practice_09_features = merged[
+        input_columns + ["min_vm_pu", "max_line_loading_percent"]
+    ].copy()
+    practice_09_diagnostics = merged[
+        ["scenario_id", "total_load_mw", "total_reactive_load_mvar", "total_line_loss_mw"]
+        + [f"ac_line_{index}_p_mw" for index in range(1, 8)]
+        + [f"dc_line_{index}_p_mw" for index in range(1, 8)]
+        + [f"line_{index}_abs_error_mw" for index in range(1, 8)]
+        + [
+            "mean_abs_line_error_mw",
+            "max_abs_line_error_mw",
+            "mean_relative_line_error_percent",
+            "critical_line",
+            "weak_bus",
+        ]
+    ].copy()
+    practice_09_full = practice_09_features.merge(
+        practice_09_diagnostics, on="scenario_id", how="left", validate="one_to_one"
+    )
+    return (
+        scenarios,
+        _round_engineering_columns(practice_08_features),
+        _round_engineering_columns(practice_08_diagnostics),
+        _round_engineering_columns(practice_09_features),
+        _round_engineering_columns(practice_09_diagnostics),
+        _round_engineering_columns(practice_09_full),
+    )
+
+
 def _round_engineering_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Округлить численные столбцы до точности, удобной для учебных таблиц."""
 
@@ -729,7 +1113,46 @@ def _round_engineering_columns(df: pd.DataFrame) -> pd.DataFrame:
         "cooling_flow_lpm": 3,
         "pressure_kpa": 3,
         "health_score": 5,
+        "sampling_rate_hz": 1,
+        "window_duration_us": 3,
+        "max_abs_voltage_v": 5,
+        "rms_voltage_v": 5,
+        "signal_energy": 10,
+        "dominant_freq_khz": 3,
+        "spectral_centroid_khz": 3,
+        "snr_db": 3,
+        "noise_std_v": 5,
+        "interference_freq_khz": 3,
+        "time_us": 3,
+        "load_scale": 4,
+        "generator_p_mw": 4,
+        "generator_vm_pu": 5,
+        "load_bus_2_mw": 4,
+        "load_bus_2_mvar": 4,
+        "load_bus_3_mw": 4,
+        "load_bus_3_mvar": 4,
+        "load_bus_4_mw": 4,
+        "load_bus_4_mvar": 4,
+        "load_bus_5_mw": 4,
+        "load_bus_5_mvar": 4,
+        "total_load_mw": 4,
+        "total_reactive_load_mvar": 4,
+        "min_vm_pu": 5,
+        "max_line_loading_percent": 3,
+        "total_line_loss_mw": 5,
+        "mean_abs_line_error_mw": 5,
+        "max_abs_line_error_mw": 5,
+        "mean_relative_line_error_percent": 3,
     }
+    for index in range(6):
+        decimals[f"bus_{index}_vm_pu"] = 5
+        decimals[f"bus_{index}_va_degree"] = 4
+    for index in range(1, 8):
+        decimals[f"ac_line_{index}_p_mw"] = 5
+        decimals[f"ac_line_{index}_loading_percent"] = 3
+        decimals[f"dc_line_{index}_p_mw"] = 5
+        decimals[f"dc_line_{index}_loading_percent"] = 3
+        decimals[f"line_{index}_abs_error_mw"] = 5
     for column, digits in decimals.items():
         if column in result.columns:
             result[column] = result[column].round(digits)
@@ -914,7 +1337,7 @@ def _practice_06_diagnostic_columns() -> list[str]:
 
 
 def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
-    """Создать CSV-файлы для практических занятий 1-6."""
+    """Создать CSV-файлы для практических занятий 1-9."""
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -935,10 +1358,21 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
     practice_06 = output_path / "practice_06_equipment_modes.csv"
     practice_06_features = output_path / "practice_06_equipment_modes_features.csv"
     practice_06_diagnostics = output_path / "practice_06_equipment_modes_diagnostics.csv"
+    practice_07_features = output_path / "practice_07_pd_signal_features.csv"
+    practice_07_diagnostics = output_path / "practice_07_pd_signal_diagnostics.csv"
+    practice_07_waveforms = output_path / "practice_07_pd_signal_waveforms.csv"
+    practice_08_features = output_path / "practice_08_power_flow_features.csv"
+    practice_08_diagnostics = output_path / "practice_08_power_flow_diagnostics.csv"
+    practice_08_scenarios = output_path / "practice_08_power_flow_scenarios.csv"
+    practice_09 = output_path / "practice_09_power_flow_comparison.csv"
+    practice_09_features = output_path / "practice_09_power_flow_comparison_features.csv"
+    practice_09_diagnostics = output_path / "practice_09_power_flow_comparison_diagnostics.csv"
     catalog = output_path / "practice_01_03_dataset_catalog.csv"
     assignments = output_path / "practice_01_03_dataset_assignments.csv"
     catalog_04_06 = output_path / "practice_04_06_dataset_catalog.csv"
     assignments_04_06 = output_path / "practice_04_06_dataset_assignments.csv"
+    catalog_07_09 = output_path / "practice_07_09_dataset_catalog.csv"
+    assignments_07_09 = output_path / "practice_07_09_dataset_assignments.csv"
     metadata = output_path / "DATASETS.md"
 
     generate_motor_measurements(
@@ -979,10 +1413,34 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
     practice_06_df[_practice_06_feature_columns()].to_csv(practice_06_features, index=False)
     practice_06_df[_practice_06_diagnostic_columns()].to_csv(practice_06_diagnostics, index=False)
 
+    practice_07_features_df, practice_07_diagnostics_df, practice_07_waveforms_df = (
+        generate_pd_signal_analysis_dataset()
+    )
+    practice_07_features_df.to_csv(practice_07_features, index=False)
+    practice_07_diagnostics_df.to_csv(practice_07_diagnostics, index=False)
+    practice_07_waveforms_df.to_csv(practice_07_waveforms, index=False)
+
+    (
+        practice_08_scenarios_df,
+        practice_08_features_df,
+        practice_08_diagnostics_df,
+        practice_09_features_df,
+        practice_09_diagnostics_df,
+        practice_09_full_df,
+    ) = generate_power_flow_scenario_dataset()
+    practice_08_scenarios_df.to_csv(practice_08_scenarios, index=False)
+    practice_08_features_df.to_csv(practice_08_features, index=False)
+    practice_08_diagnostics_df.to_csv(practice_08_diagnostics, index=False)
+    practice_09_features_df.to_csv(practice_09_features, index=False)
+    practice_09_diagnostics_df.to_csv(practice_09_diagnostics, index=False)
+    practice_09_full_df.to_csv(practice_09, index=False)
+
     dataset_catalog().to_csv(catalog, index=False)
     dataset_assignments().to_csv(assignments, index=False)
     dataset_catalog_04_06().to_csv(catalog_04_06, index=False)
     dataset_assignments_04_06().to_csv(assignments_04_06, index=False)
+    dataset_catalog_07_09().to_csv(catalog_07_09, index=False)
+    dataset_assignments_07_09().to_csv(assignments_07_09, index=False)
     metadata.write_text(_dataset_metadata_text(), encoding="utf-8")
 
     return DatasetPaths(
@@ -1002,10 +1460,21 @@ def create_all_datasets(output_dir: str | Path) -> DatasetPaths:
         practice_06=practice_06,
         practice_06_features=practice_06_features,
         practice_06_diagnostics=practice_06_diagnostics,
+        practice_07_features=practice_07_features,
+        practice_07_diagnostics=practice_07_diagnostics,
+        practice_07_waveforms=practice_07_waveforms,
+        practice_08_features=practice_08_features,
+        practice_08_diagnostics=practice_08_diagnostics,
+        practice_08_scenarios=practice_08_scenarios,
+        practice_09=practice_09,
+        practice_09_features=practice_09_features,
+        practice_09_diagnostics=practice_09_diagnostics,
         catalog=catalog,
         assignments=assignments,
         catalog_04_06=catalog_04_06,
         assignments_04_06=assignments_04_06,
+        catalog_07_09=catalog_07_09,
+        assignments_07_09=assignments_07_09,
         metadata=metadata,
     )
 
@@ -1560,6 +2029,177 @@ def dataset_assignments_04_06() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def dataset_catalog_07_09() -> pd.DataFrame:
+    """Вернуть реестр открытых источников для методических заданий 7-9."""
+
+    rows = [
+        {
+            "dataset_id": "mendeley_pd_cables_toa",
+            "name": "Partial Discharge Signals in Insulated Power Cables with Time-of-Arrival Annotations",
+            "url": "https://data.mendeley.com/datasets/3mdgxv6zt7",
+            "object": "временные сигналы частичных разрядов в кабельной изоляции",
+            "license": "Mendeley Data; проверить лицензию версии перед публикацией производных материалов",
+            "access": "Mendeley Data",
+            "size_note": "архив сигналов и аннотаций; для аудиторной работы требуется подмножество",
+            "format_note": "временные ряды и таблицы аннотаций",
+            "lessons": "7",
+            "base_usage": "переход от временных отсчетов к признакам: амплитуда, энергия, число импульсов, SNR и спектр",
+            "risk_level": "средний",
+            "risk_note": "аннотации времени прихода нельзя использовать как обычные признаки без обсуждения утечки",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-16",
+        },
+        {
+            "dataset_id": "zenodo_pd_calibrator",
+            "name": "Dataset for New Synthetic Partial Discharge Calibrator",
+            "url": "https://zenodo.org/records/8436197",
+            "object": "сигналы калибратора частичных разрядов",
+            "license": "Zenodo; проверить лицензию конкретной версии записи",
+            "access": "Zenodo",
+            "size_note": "измерительные файлы калибратора, объем зависит от версии",
+            "format_note": "сигналы и сопроводительные таблицы",
+            "lessons": "7",
+            "base_usage": "проверка устойчивости амплитудных и энергетических признаков на калиброванных импульсах",
+            "risk_level": "низкий",
+            "risk_note": "источник ближе к метрологическому калибратору, чем к реальному дефекту изоляции",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-16",
+        },
+        {
+            "dataset_id": "pandapower_case9",
+            "name": "pandapower IEEE 9-bus example network",
+            "url": "https://pandapower.readthedocs.io/en/latest/networks/power_system_test_cases.html",
+            "object": "учебная тестовая электроэнергетическая сеть",
+            "license": "pandapower documentation and examples; проверить условия версии",
+            "access": "поставляется с pandapower",
+            "size_note": "малая тестовая сеть",
+            "format_note": "объект pandapower net",
+            "lessons": "8,9",
+            "base_usage": "сравнение собственной 6-узловой сети с типовой тестовой сетью",
+            "risk_level": "низкий",
+            "risk_note": "параметры сети учебные; их нельзя переносить на реальный объект без проверки",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-16",
+        },
+        {
+            "dataset_id": "ieee_pes_test_feeders",
+            "name": "IEEE PES Distribution Test Feeders",
+            "url": "https://cmte.ieee.org/pes-testfeeders/",
+            "object": "распределительные тестовые сети IEEE PES",
+            "license": "условия IEEE PES Test Feeders требуют проверки перед распространением",
+            "access": "официальный сайт IEEE PES Test Feeders",
+            "size_note": "несколько тестовых фидеров разного масштаба",
+            "format_note": "файлы моделей распределительных сетей",
+            "lessons": "8,9",
+            "base_usage": "расширение анализа напряжений и перегрузок для распределительных сетей",
+            "risk_level": "средний",
+            "risk_note": "DC-приближение для распределительных сетей обычно менее применимо из-за отношения R/X",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-16",
+        },
+        {
+            "dataset_id": "matpower_cases",
+            "name": "MATPOWER case archive",
+            "url": "https://matpower.org/docs/ref/matpower6.0/menu6.0.html",
+            "object": "тестовые сети для расчета режима и оптимизации энергосистем",
+            "license": "MATPOWER; проверить условия использования выбранного case-файла",
+            "access": "MATPOWER documentation",
+            "size_note": "малые и средние case-файлы",
+            "format_note": "MATPOWER case format",
+            "lessons": "8,9",
+            "base_usage": "сравнение AC/DC-расчета на стандартных тестовых сетях",
+            "risk_level": "средний",
+            "risk_note": "при переносе в pandapower нужно проверить базисные мощности, номера шин и типы узлов",
+            "implementation_status": "methodology_only",
+            "checked_at": "2026-05-16",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def dataset_assignments_07_09() -> pd.DataFrame:
+    """Сформировать развернутые задания по открытым источникам для занятий 7-9."""
+
+    catalog = dataset_catalog_07_09()
+    rows: list[dict[str, str]] = []
+    for row in catalog.to_dict(orient="records"):
+        for lesson in str(row["lessons"]).split(","):
+            lesson = lesson.strip()
+            if lesson == "7":
+                title = f"Извлечение признаков из сигналов: {row['name']}"
+                theory = (
+                    "Опишите частоту дискретизации, длительность окна, способ "
+                    "обнаружения импульсов, расчет энергии и переход к спектру "
+                    "с помощью FFT (Fast Fourier Transform, быстрое преобразование Фурье)."
+                )
+                practice = (
+                    "Выберите 20-50 окон сигналов, рассчитайте максимум, RMS, "
+                    "энергию, число импульсов, доминирующую частоту и SNR. "
+                    "Отдельно укажите, какие аннотации являются диагностическими."
+                )
+                visuals = "временной сигнал; спектр; таблица признаков; матрица ошибок классификатора"
+                questions = "Почему шаг дискретизации входит в расчет энергии? Чем спектральный пик отличается от импульса во времени?"
+            elif lesson == "8":
+                title = f"Расчет режима по открытой тестовой сети: {row['name']}"
+                theory = (
+                    "Опишите состав сети: шины, линии, нагрузки, генераторы и "
+                    "внешняя сеть. Укажите, какие величины задаются до расчета, "
+                    "а какие являются результатами AC power flow."
+                )
+                practice = (
+                    "Создайте или загрузите малую сеть, выполните AC power flow, "
+                    "измените нагрузку на 10-30 процентов и сравните напряжения "
+                    "шин и загрузку линий."
+                )
+                visuals = "таблица напряжений; диаграмма загрузки линий; сравнение базового и измененного режима"
+                questions = "Что является входом расчета? Почему расчет режима не является заменой машинному обучению?"
+            else:
+                title = f"Сравнение AC/DC и суррогатной модели: {row['name']}"
+                theory = (
+                    "Опишите допущения DC power flow: малые углы, малые потери, "
+                    "доминирование реактивного сопротивления над активным. "
+                    "Сформулируйте, какие ошибки нужно измерять."
+                )
+                practice = (
+                    "Сформируйте несколько сценариев нагрузки, сравните AC и DC "
+                    "перетоки активной мощности, затем предложите безопасные "
+                    "признаки для суррогатной модели без использования AC-результатов."
+                )
+                visuals = "AC против DC; распределение ошибок; график прогноза суррогатной модели"
+                questions = "Когда DC-приближение допустимо? Почему AC-результат нельзя включать в признаки суррогатной модели?"
+
+            rows.append(
+                {
+                    "assignment_id": f"{row['dataset_id']}_lesson_{lesson}",
+                    "dataset_id": str(row["dataset_id"]),
+                    "lesson": lesson,
+                    "assignment_title": title,
+                    "implementation_status": str(row["implementation_status"]),
+                    "theory_block": theory,
+                    "practice_block": practice,
+                    "expected_artifacts": (
+                        "Паспорт источника, таблица ролей столбцов или элементов, "
+                        "перечень рисков утечки, не менее двух визуализаций и "
+                        "инженерный вывод о применимости источника."
+                    ),
+                    "dataset_structure": (
+                        f"Объект: {row['object']}. Формат: {row['format_note']}. "
+                        f"Доступ: {row['access']}. Размер: {row['size_note']}. "
+                        f"Проверено: {row['checked_at']}."
+                    ),
+                    "minimum_working_subset": "Для аудиторной работы использовать малый фрагмент: 20-50 сигналов или 10-30 режимных сценариев.",
+                    "target_rule": "Цель выбирается по занятию; диагностические аннотации и результаты расчетов нельзя использовать как обычные признаки.",
+                    "split_rule": "Сохранять измерительный опыт, временной фрагмент или расчетный сценарий целиком; не смешивать связанные строки между train и test.",
+                    "success_criteria": "Зачет: корректно определены входы, результаты, диагностические столбцы, метрики и ограничения применимости.",
+                    "recommended_visualizations": visuals,
+                    "control_questions": questions,
+                    "risk_note": str(row["risk_note"]),
+                    "methodical_note": str(row["base_usage"]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _minimum_working_subset(dataset_id: str, format_note: str, size_note: str) -> str:
     """Вернуть конкретное ограничение объема для аудиторной работы."""
 
@@ -1883,7 +2523,7 @@ def dataset_assignments() -> pd.DataFrame:
 def _dataset_metadata_text() -> str:
     """Вернуть методическое описание сформированных CSV-файлов."""
 
-    return """# Учебные наборы данных для практических занятий 1-6
+    return """# Учебные наборы данных для практических занятий 1-9
 
 Дата формирования: 2026-05-14.
 
@@ -1902,7 +2542,12 @@ def _dataset_metadata_text() -> str:
 7. PRPD-признаки частичных разрядов формируются из фазового распределения,
    кажущегося заряда и повторяемости импульсов;
 8. режимы оборудования в задаче кластеризации задаются сенсорными
-   профилями без целевой переменной в feature-CSV.
+   профилями без целевой переменной в feature-CSV;
+9. сигнал частичных разрядов рассматривается во временной и частотной
+   областях;
+10. расчет режима энергосистемы выполняется как инженерная физическая
+   процедура, а суррогатная модель используется только как приближение
+   результатов расчета.
 
 Открытые реальные ориентиры для структуры признаков: Zenodo
 `ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
@@ -1960,6 +2605,31 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
 16. `practice_04_06_dataset_assignments.csv` - развернутые задания по
    открытому источнику: постановка, риски утечки, рекомендуемые
    визуализации и критерии успешного выполнения.
+17. `practice_07_pd_signal_features.csv` - признаки окон сигналов частичных
+   разрядов: амплитуда, RMS, энергия, число импульсов, спектральные
+   показатели и SNR.
+18. `practice_07_pd_signal_diagnostics.csv` - истинные параметры генерации
+   сигналов и прямые диагностические метки. Эти столбцы используются только
+   для интерпретации и антипримера утечки.
+19. `practice_07_pd_signal_waveforms.csv` - длинная таблица отсчетов
+   временных сигналов. Одна строка соответствует одному отсчету одного окна.
+20. `practice_08_power_flow_scenarios.csv` - входные сценарии нагрузки и
+   генерации для 6-узловой сети 110 кВ.
+21. `practice_08_power_flow_features.csv` - сводные результаты AC power flow:
+   минимальное напряжение, максимальная загрузка линии, потери и критический
+   элемент.
+22. `practice_08_power_flow_diagnostics.csv` - детальные напряжения шин,
+   углы и загрузки линий для интерпретации режима.
+23. `practice_09_power_flow_comparison_features.csv` - безопасные признаки
+   сценария и целевые AC-показатели для суррогатной модели.
+24. `practice_09_power_flow_comparison_diagnostics.csv` - детальное сравнение
+   AC- и DC-перетоков, ошибки и расчетные величины, которые нельзя включать
+   во входы суррогатной модели.
+25. `practice_09_power_flow_comparison.csv` - полная таблица для
+   преподавательской диагностики и обратной совместимости.
+26. `practice_07_09_dataset_catalog.csv` и
+   `practice_07_09_dataset_assignments.csv` - реестр источников и
+   методические задания для расширения занятий 7-9.
 
 ## Важное различие распределений КПД
 
@@ -2026,4 +2696,21 @@ diagnostics-CSV и присоединяются в блокнотах тольк
    https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset.
    Набор пригоден для сравнения учебной кластеризации режимов с задачами
    предиктивного обслуживания и диагностики отказов.
+
+## Открытые источники для расширения занятий 7-9
+
+Для занятий 7-9 внешние источники используются как методические задания без
+обязательной загрузки больших архивов:
+
+1. Mendeley Data `Partial Discharge Signals in Insulated Power Cables with
+   Time-of-Arrival Annotations` -
+   https://data.mendeley.com/datasets/3mdgxv6zt7.
+2. Zenodo `Dataset for New Synthetic Partial Discharge Calibrator` -
+   https://zenodo.org/records/8436197.
+3. pandapower IEEE test networks -
+   https://pandapower.readthedocs.io/en/latest/networks/power_system_test_cases.html.
+4. IEEE PES Distribution Test Feeders -
+   https://cmte.ieee.org/pes-testfeeders/.
+5. MATPOWER case archive -
+   https://matpower.org/docs/ref/matpower6.0/menu6.0.html.
 """

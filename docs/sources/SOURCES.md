@@ -1,6 +1,6 @@
-# Проверенные источники для занятий 1-6
+# Проверенные источники для занятий 1-9
 
-Дата последней проверки актуальности: 2026-05-15.
+Дата последней проверки актуальности: 2026-05-16.
 
 Документ содержит основной проверенный перечень источников для базовых и
 расширенных заданий. Полный каталог из 25 наборов данных приведен в
@@ -9,6 +9,9 @@
 Для занятий 4-6 отдельный обзор находится в
 `docs/sources/datasets_04_06_research.md`; машинно-читаемый каталог
 создается в `data/processed/practice_04_06_dataset_catalog.csv`.
+Для занятий 7-9 отдельный обзор находится в
+`docs/sources/datasets_07_09_research.md`; машинно-читаемый каталог
+создается в `data/processed/practice_07_09_dataset_catalog.csv`.
 
 ## Нормативные и методические источники
 
@@ -54,3 +57,27 @@
 
 6. Case Western Reserve University Bearing Data Center. URL: https://engineering.case.edu/bearingdatacenter/welcome.
    Публичный эталонный сравнительный набор данных (benchmark dataset) по вибрационной диагностике подшипников электродвигателя. Явная лицензия на официальной странице не указана, поэтому для учебного комплекта предпочтительнее использовать ссылку и малые производные признаки только при соблюдении условий цитирования.
+
+## Основные источники для занятий 7-9
+
+1. Partial Discharge Signals in Insulated Power Cables with Time-of-Arrival
+   Annotations, Mendeley Data. URL:
+   https://data.mendeley.com/datasets/3mdgxv6zt7. Источник полезен для
+   извлечения временных и спектральных признаков сигналов частичных разрядов.
+
+2. Dataset for New Synthetic Partial Discharge Calibrator, Zenodo. URL:
+   https://zenodo.org/records/8436197. Источник применим для обсуждения
+   калиброванных импульсов и устойчивости амплитудных признаков.
+
+3. pandapower IEEE test networks. URL:
+   https://pandapower.readthedocs.io/en/latest/networks/power_system_test_cases.html.
+   Источник используется как ориентир для расширения занятий 8-9 на типовые
+   тестовые сети.
+
+4. IEEE PES Distribution Test Feeders. URL:
+   https://cmte.ieee.org/pes-testfeeders/. Источник полезен для обсуждения
+   распределительных сетей и ограничений DC-приближения.
+
+5. MATPOWER case archive. URL:
+   https://matpower.org/docs/ref/matpower6.0/menu6.0.html. Источник содержит
+   стандартные case-файлы для сравнения методов расчета режима.

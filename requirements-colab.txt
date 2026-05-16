@@ -5,3 +5,6 @@ pandas>=2.2
 matplotlib>=3.7
 scikit-learn>=1.4
 scipy>=1.11
+
+# Требуется для занятий 8-9 по расчету режима энергосистемы.
+pandapower>=3.0

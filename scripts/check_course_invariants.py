@@ -1,4 +1,4 @@
-"""Smoke-test инвариантов курса для занятий 1-6.
+"""Smoke-test инвариантов курса для занятий 1-9.
 
 Скрипт выполняет быстрые проверки, которые защищают учебные материалы от
 методических регрессий: утечки целевой переменной, нарушения энергетического
@@ -243,6 +243,68 @@ def _check_practice_06() -> None:
     assert not duplicated, f"Feature и diagnostics занятия 6 дублируют столбцы: {sorted(duplicated)}"
 
 
+def _check_practice_07() -> None:
+    features = _read_csv("practice_07_pd_signal_features.csv")
+    diagnostics = _read_csv("practice_07_pd_signal_diagnostics.csv")
+    waveforms = _read_csv("practice_07_pd_signal_waveforms.csv")
+
+    assert features.shape == (400, 12), f"Неожиданный размер feature-CSV занятия 7: {features.shape}"
+    assert diagnostics.shape == (400, 8), f"Неожиданный размер diagnostics-CSV занятия 7: {diagnostics.shape}"
+    assert waveforms.shape == (51_200, 6), f"Неожиданный размер waveforms-CSV занятия 7: {waveforms.shape}"
+    forbidden = {"state_code", "direct_state_label", "leakage_pd_indicator", "true_pulse_count"}
+    assert not forbidden.intersection(features.columns), (
+        f"В feature-CSV занятия 7 попали диагностические столбцы: {sorted(forbidden.intersection(features.columns))}"
+    )
+    assert set(features["condition_class"]) == {
+        "normal",
+        "rare_pd",
+        "frequent_pd",
+        "noisy",
+        "external_interference",
+    }, "Неверный набор классов сигналов занятия 7."
+    assert features["sample_id"].is_unique and diagnostics["sample_id"].is_unique
+    assert waveforms.groupby("sample_id")["point_index"].count().eq(128).all(), (
+        "Каждый сигнал занятия 7 должен содержать 128 отсчетов."
+    )
+
+
+def _check_practice_08() -> None:
+    features = _read_csv("practice_08_power_flow_features.csv")
+    diagnostics = _read_csv("practice_08_power_flow_diagnostics.csv")
+    scenarios = _read_csv("practice_08_power_flow_scenarios.csv")
+
+    assert features.shape == (120, 11), f"Неожиданный размер feature-CSV занятия 8: {features.shape}"
+    assert diagnostics.shape == (120, 29), f"Неожиданный размер diagnostics-CSV занятия 8: {diagnostics.shape}"
+    assert scenarios.shape == (120, 13), f"Неожиданный размер scenarios-CSV занятия 8: {scenarios.shape}"
+    assert features["scenario_id"].is_unique and diagnostics["scenario_id"].is_unique
+    assert features["min_vm_pu"].between(0.90, 1.08).all(), "Напряжения занятия 8 вне учебного диапазона."
+    assert features["max_line_loading_percent"].max() > 90, "В занятии 8 нет напряженных режимов для анализа."
+    assert features["max_line_loading_percent"].min() > 25, "Загрузка линий занятия 8 слишком мала для анализа."
+    assert {"voltage_violation", "line_overload"}.issubset(diagnostics.columns)
+
+
+def _check_practice_09() -> None:
+    features = _read_csv("practice_09_power_flow_comparison_features.csv")
+    diagnostics = _read_csv("practice_09_power_flow_comparison_diagnostics.csv")
+    full = _read_csv("practice_09_power_flow_comparison.csv")
+
+    assert features.shape == (120, 15), f"Неожиданный размер feature-CSV занятия 9: {features.shape}"
+    assert diagnostics.shape == (120, 30), f"Неожиданный размер diagnostics-CSV занятия 9: {diagnostics.shape}"
+    assert full.shape == (120, 44), f"Неожиданный размер полного CSV занятия 9: {full.shape}"
+    forbidden = {"total_line_loss_mw", "critical_line", "weak_bus"} | {
+        f"ac_line_{index}_p_mw" for index in range(1, 8)
+    }
+    assert not forbidden.intersection(features.columns), (
+        f"В feature-CSV занятия 9 попали расчетные диагностические столбцы: {sorted(forbidden.intersection(features.columns))}"
+    )
+    assert {"min_vm_pu", "max_line_loading_percent"}.issubset(features.columns), (
+        "В feature-CSV занятия 9 должны быть целевые AC-показатели."
+    )
+    assert diagnostics["max_abs_line_error_mw"].max() > 0.1, (
+        "Сравнение AC/DC занятия 9 не содержит заметных ошибок."
+    )
+
+
 def _check_student_notebooks_clear_outputs() -> None:
     for path in sorted(NOTEBOOKS_STUDENT.glob("*.ipynb")):
         notebook = nbformat.read(path, as_version=4)
@@ -313,6 +375,29 @@ def _check_student_notebooks_clear_outputs() -> None:
             }
             for fragment, description in required_fragments.items():
                 assert fragment in notebook_source, f"В занятии 6 нет блока: {description}."
+        if path.name.startswith(("07_", "08_", "09_")):
+            assert notebook_source.count("TODO") >= 3, (
+                f"В занятии {path.name[:2]} недостаточно контролируемых TODO-заданий."
+            )
+            for fragment in [
+                "Источники и проверка актуальности",
+                "Реестр найденных наборов данных и развернутые задания",
+                "practice_07_09_dataset_catalog.csv",
+                "practice_07_09_dataset_assignments.csv",
+                "АНТИПРИМЕР",
+            ]:
+                assert fragment in notebook_source, (
+                    f"В студенческом блокноте {path.name} нет обязательного фрагмента: {fragment}"
+                )
+        if path.name.startswith("07_"):
+            for fragment in ["FFT", "signal_energy", "snr_db", "ConfusionMatrixDisplay", "state_code"]:
+                assert fragment in notebook_source, f"В занятии 7 нет обязательного блока: {fragment}"
+        if path.name.startswith("08_"):
+            for fragment in ["pandapower", "runpp", "load_multiplier", "слабый узел", "критическая линия"]:
+                assert fragment in notebook_source, f"В занятии 8 нет обязательного блока: {fragment}"
+        if path.name.startswith("09_"):
+            for fragment in ["DC power flow", "surrogate_features", "RandomForestRegressor", "max_abs_line_error_mw", "ac_line_1_p_mw"]:
+                assert fragment in notebook_source, f"В занятии 9 нет обязательного блока: {fragment}"
         for index, cell in enumerate(notebook.cells):
             if cell.cell_type != "code":
                 continue
@@ -329,11 +414,20 @@ def _check_teacher_notebooks_04_06_executed() -> None:
         assert output_count > 0, f"Преподавательский блокнот не выполнен: {path.name}"
 
 
+def _check_teacher_notebooks_07_09_executed() -> None:
+    for path in sorted(NOTEBOOKS_TEACHER.glob("0[7-9]_*.ipynb")):
+        notebook = nbformat.read(path, as_version=4)
+        output_count = sum(len(cell.get("outputs", [])) for cell in notebook.cells if cell.cell_type == "code")
+        assert output_count > 0, f"Преподавательский блокнот не выполнен: {path.name}"
+
+
 def _check_dataset_catalog_status() -> None:
     catalog = _read_csv("practice_01_03_dataset_catalog.csv")
     assignments = _read_csv("practice_01_03_dataset_assignments.csv")
     catalog_04_06 = _read_csv("practice_04_06_dataset_catalog.csv")
     assignments_04_06 = _read_csv("practice_04_06_dataset_assignments.csv")
+    catalog_07_09 = _read_csv("practice_07_09_dataset_catalog.csv")
+    assignments_07_09 = _read_csv("practice_07_09_dataset_assignments.csv")
     assert "implementation_status" in catalog.columns, "В каталоге нет implementation_status."
     assert "implementation_status" in assignments.columns, "В assignments нет implementation_status."
     ready_rows = catalog[catalog["implementation_status"] == "external_notebook_ready"]
@@ -357,6 +451,19 @@ def _check_dataset_catalog_status() -> None:
     research_text = research_path.read_text(encoding="utf-8")
     for fragment in ["NASA C-MAPSS", "Partial Discharge", "UCI AI4I 2020"]:
         assert fragment in research_text, f"В исследовании источников 4-6 нет фрагмента: {fragment}"
+    assert catalog_07_09.shape[0] >= 5, "В каталоге 7-9 слишком мало открытых источников."
+    assert assignments_07_09.shape[0] >= 8, "В assignments 7-9 слишком мало заданий."
+    assert set(catalog_07_09["implementation_status"]) == {"methodology_only"}, (
+        "Каталог 7-9 должен явно маркировать источники как methodology_only."
+    )
+    assert set(assignments_07_09["lesson"].astype(str)).issuperset({"7", "8", "9"}), (
+        "В assignments 7-9 должны быть задания для занятий 7, 8 и 9."
+    )
+    research_07_09 = PROJECT_ROOT / "docs" / "sources" / "datasets_07_09_research.md"
+    assert research_07_09.exists(), "Не найден docs/sources/datasets_07_09_research.md."
+    research_07_09_text = research_07_09.read_text(encoding="utf-8")
+    for fragment in ["Partial Discharge", "pandapower", "MATPOWER"]:
+        assert fragment in research_07_09_text, f"В исследовании источников 7-9 нет фрагмента: {fragment}"
 
 
 def _check_external_datasets() -> None:
@@ -608,6 +715,48 @@ def _check_slides_04_06_structure_and_images() -> None:
     assert not orphan_images, f"В docs/slides/img есть неиспользуемые изображения 4-6: {orphan_images}"
 
 
+def _check_teacher_guides_07_09_structure() -> None:
+    required_sections = [
+        "## Термины для обязательного пояснения",
+        "## Математическая основа",
+        "## Конкретизация задания для студентов",
+        "## Распределение времени",
+        "## Критерий зачета",
+    ]
+    for path in sorted(TEACHER_GUIDES_DIR.glob("0[7-9]_*.md")):
+        text = path.read_text(encoding="utf-8")
+        for section in required_sections:
+            assert section in text, f"В методичке {path.name} нет раздела: {section}"
+    guide = TEACHER_GUIDES_DIR / "visualization_and_explanation_guide_07_09.md"
+    assert guide.exists(), "Не найден visualization_and_explanation_guide_07_09.md."
+    guide_text = guide.read_text(encoding="utf-8")
+    for fragment in ["Занятие 7", "Занятие 8", "Занятие 9", "Минимальная форма вывода"]:
+        assert fragment in guide_text, f"В guide 07-09 нет раздела: {fragment}"
+
+
+def _check_slides_07_09_structure() -> None:
+    for path in sorted(SLIDES_DIR.glob("0[7-9]_*.md")):
+        text = path.read_text(encoding="utf-8")
+        for fragment in [
+            "## Распределение времени занятия",
+            "## Содержательная постановка задачи",
+            "## Формальная постановка задачи",
+            "## Практическое задание",
+            "## АНТИПРИМЕР",
+            "## Критерии зачета",
+            "## Контрольные вопросы",
+        ]:
+            assert fragment in text, f"В слайдах {path.name} нет блока: {fragment}"
+        speaker_notes = [
+            block
+            for block in re.findall(r"<!--(.*?)-->", text, flags=re.DOTALL)
+            if "_class:" not in block
+        ]
+        assert len(speaker_notes) >= 8, (
+            f"В слайдах {path.name} слишком мало заметок докладчика: {len(speaker_notes)}."
+        )
+
+
 def main() -> None:
     _check_practice_01()
     _check_practice_02()
@@ -615,14 +764,20 @@ def main() -> None:
     _check_practice_04()
     _check_practice_05()
     _check_practice_06()
+    _check_practice_07()
+    _check_practice_08()
+    _check_practice_09()
     _check_student_notebooks_clear_outputs()
     _check_teacher_notebooks_04_06_executed()
+    _check_teacher_notebooks_07_09_executed()
     _check_dataset_catalog_status()
     _check_external_datasets()
     _check_external_notebooks()
     _check_teacher_guides_04_06_structure()
     _check_slides_04_06_structure_and_images()
-    print("Инварианты курса для занятий 1-6 соблюдены.")
+    _check_teacher_guides_07_09_structure()
+    _check_slides_07_09_structure()
+    print("Инварианты курса для занятий 1-9 соблюдены.")
 
 
 if __name__ == "__main__":

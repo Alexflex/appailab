@@ -1,7 +1,7 @@
 # Прикладной искусственный интеллект: практические занятия
 
 Учебный комплект предназначен для магистрантов начального уровня и содержит
-первые шесть эталонных практических занятий по дисциплине "Прикладной
+первые девять эталонных практических занятий по дисциплине "Прикладной
 искусственный интеллект".
 
 ## Состав реализованных этапов
@@ -10,18 +10,19 @@
    (интерактивный вычислительный блокнот).
 2. `notebooks/teacher/` - версии Jupyter Notebook для преподавателя.
 3. `data/processed/` - учебные CSV-файлы (comma-separated values, текстовые
-   таблицы со значениями, разделенными запятыми) для занятий 1-6.
+   таблицы со значениями, разделенными запятыми) для занятий 1-9.
 4. `src/appai_lab/` - генераторы данных.
 5. `scripts/generate_datasets.py` - пересоздание CSV-файлов.
 6. `scripts/build_notebooks.py` - пересборка блокнотов занятий 1-3.
 7. `scripts/build_notebooks_04_06.py` - пересборка блокнотов занятий 4-6.
-8. `scripts/prepare_external_datasets.py` - загрузка открытых внешних
+8. `scripts/build_notebooks_07_09.py` - пересборка блокнотов занятий 7-9.
+9. `scripts/prepare_external_datasets.py` - загрузка открытых внешних
    наборов данных и подготовка компактных учебных фрагментов.
-9. `scripts/build_external_dataset_notebooks.py` - сборка расширенных
+10. `scripts/build_external_dataset_notebooks.py` - сборка расширенных
    блокнотов по реальным и открытым данным.
-10. `docs/teacher_guides/` - методические указания.
-11. `docs/templates/` - шаблоны отчетов.
-12. `docs/sources/` - проверенные источники и обзоры наборов данных.
+11. `docs/teacher_guides/` - методические указания.
+12. `docs/templates/` - шаблоны отчетов.
+13. `docs/sources/` - проверенные источники и обзоры наборов данных.
 
 ## Установка локального окружения
 
@@ -32,9 +33,18 @@ pip install -r requirements-base.txt
 python -m ipykernel install --user --name appai-lab --display-name "Python (appai-lab)"
 ```
 
-Файл `requirements-extended.txt` предназначен для последующих занятий, где
-потребуются `pandapower`, `seaborn` и локальная LLM через Ollama. Полный набор
-зависимостей курса можно установить командой `pip install -r requirements.txt`.
+Для занятий 8-9 требуется `pandapower` - библиотека моделирования
+электроэнергетических систем на языке Python. В Google Colab эта зависимость
+устанавливается из `requirements-colab.txt`. Для локального запуска занятий
+1-9 можно установить базовые и расширенные зависимости:
+
+```bash
+pip install -r requirements-base.txt
+pip install -r requirements-extended.txt
+```
+
+Полный набор зависимостей курса можно установить командой
+`pip install -r requirements.txt`.
 
 Если окружение уже создано, достаточно активировать его и обновить зависимости:
 
@@ -70,8 +80,21 @@ python scripts/generate_datasets.py
 14. `data/processed/practice_06_equipment_modes_features.csv`;
 15. `data/processed/practice_06_equipment_modes_diagnostics.csv`;
 16. `data/processed/practice_06_equipment_modes.csv`;
-17. `data/processed/practice_01_03_dataset_catalog.csv`;
-18. `data/processed/practice_01_03_dataset_assignments.csv`.
+17. `data/processed/practice_07_pd_signal_features.csv`;
+18. `data/processed/practice_07_pd_signal_diagnostics.csv`;
+19. `data/processed/practice_07_pd_signal_waveforms.csv`;
+20. `data/processed/practice_08_power_flow_features.csv`;
+21. `data/processed/practice_08_power_flow_diagnostics.csv`;
+22. `data/processed/practice_08_power_flow_scenarios.csv`;
+23. `data/processed/practice_09_power_flow_comparison_features.csv`;
+24. `data/processed/practice_09_power_flow_comparison_diagnostics.csv`;
+25. `data/processed/practice_09_power_flow_comparison.csv`;
+26. `data/processed/practice_01_03_dataset_catalog.csv`;
+27. `data/processed/practice_01_03_dataset_assignments.csv`;
+28. `data/processed/practice_04_06_dataset_catalog.csv`;
+29. `data/processed/practice_04_06_dataset_assignments.csv`;
+30. `data/processed/practice_07_09_dataset_catalog.csv`;
+31. `data/processed/practice_07_09_dataset_assignments.csv`.
 
 Файлы с суффиксом `_features.csv` используются в базовых студенческих
 моделях. Файлы с суффиксом `_diagnostics.csv` применяются для объяснения
@@ -119,10 +142,11 @@ python scripts/prefetch_data.py
 source venv/bin/activate
 python scripts/build_notebooks.py
 python scripts/build_notebooks_04_06.py
+python scripts/build_notebooks_07_09.py
 ```
 
 Первая команда собирает базовые блокноты занятий 1-3, вторая - базовые
-блокноты занятий 4-6.
+блокноты занятий 4-6, третья - базовые блокноты занятий 7-9.
 
 Расширенные блокноты по внешним данным собираются отдельной командой:
 
@@ -192,6 +216,9 @@ GitHub. Для массового запуска в аудитории реко�
 | 04. Прогноз температуры электропривода HAPS | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/04_haps_thermal_modeling_student.ipynb) |
 | 05. Классификация частичных разрядов | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/05_partial_discharge_classification_student.ipynb) |
 | 06. Кластеризация режимов оборудования | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/06_equipment_modes_clustering_student.ipynb) |
+| 07. Анализ сигналов частичных разрядов | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/07_pd_signal_analysis_student.ipynb) |
+| 08. Расчет режима в pandapower | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/08_pandapower_power_flow_student.ipynb) |
+| 09. Сравнение методов расчета режима | [Открыть](https://colab.research.google.com/github/Alexflex/appailab/blob/main/notebooks/student/09_power_flow_comparison_student.ipynb) |
 
 Расширенные блокноты по внешним данным:
 
@@ -225,7 +252,9 @@ GitHub. Для массового запуска в аудитории реко�
 Учебные CSV-файлы являются синтетическими, но построены по физически
 осмысленным зависимостям и сопоставлены с открытыми реальными наборами данных.
 Реальные источники перечислены в `docs/sources/SOURCES.md` и подробно
-рассмотрены в `docs/sources/datasets_01_03_research.md`.
+рассмотрены в `docs/sources/datasets_01_03_research.md`,
+`docs/sources/datasets_04_06_research.md` и
+`docs/sources/datasets_07_09_research.md`.
 
 Расширенные блокноты используют открытые внешние данные как отдельные
 развернутые задания. При работе с временными рядами применяется групповое или
@@ -239,3 +268,7 @@ GitHub. Для массового запуска в аудитории реко�
    и развернутых заданий;
 2. `docs/teacher_guides/visualization_and_explanation_guide_01_03.md` -
    руководство по объяснению графиков, схем и типовых ошибок интерпретации.
+3. `docs/teacher_guides/visualization_and_explanation_guide_04_06.md` -
+   руководство по визуализациям занятий 4-6.
+4. `docs/teacher_guides/visualization_and_explanation_guide_07_09.md` -
+   руководство по визуализациям занятий 7-9.

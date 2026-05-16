@@ -31,6 +31,9 @@ LECTURES = (
     "04_haps_thermal_modeling",
     "05_partial_discharge_classification",
     "06_equipment_modes_clustering",
+    "07_pd_signal_analysis",
+    "08_pandapower_power_flow",
+    "09_power_flow_comparison",
 )
 DEFAULT_FORMATS = ("pdf", "pptx", "html")
 

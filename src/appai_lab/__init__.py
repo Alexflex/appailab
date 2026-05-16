@@ -8,6 +8,8 @@ from .data_generators import (
     generate_haps_thermal_dataset,
     generate_motor_measurements,
     generate_partial_discharge_dataset,
+    generate_pd_signal_analysis_dataset,
+    generate_power_flow_scenario_dataset,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "generate_haps_thermal_dataset",
     "generate_motor_measurements",
     "generate_partial_discharge_dataset",
+    "generate_pd_signal_analysis_dataset",
+    "generate_power_flow_scenario_dataset",
 ]

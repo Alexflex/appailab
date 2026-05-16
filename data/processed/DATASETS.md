@@ -1,4 +1,4 @@
-# Учебные наборы данных для практических занятий 1-6
+# Учебные наборы данных для практических занятий 1-9
 
 Дата формирования: 2026-05-14.
 
@@ -17,7 +17,12 @@
 7. PRPD-признаки частичных разрядов формируются из фазового распределения,
    кажущегося заряда и повторяемости импульсов;
 8. режимы оборудования в задаче кластеризации задаются сенсорными
-   профилями без целевой переменной в feature-CSV.
+   профилями без целевой переменной в feature-CSV;
+9. сигнал частичных разрядов рассматривается во временной и частотной
+   областях;
+10. расчет режима энергосистемы выполняется как инженерная физическая
+   процедура, а суррогатная модель используется только как приближение
+   результатов расчета.
 
 Открытые реальные ориентиры для структуры признаков: Zenodo
 `ElectricMotorTemperature` из TSML Archive, Zenodo PMSM inverter fault
@@ -75,6 +80,31 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
 16. `practice_04_06_dataset_assignments.csv` - развернутые задания по
    открытому источнику: постановка, риски утечки, рекомендуемые
    визуализации и критерии успешного выполнения.
+17. `practice_07_pd_signal_features.csv` - признаки окон сигналов частичных
+   разрядов: амплитуда, RMS, энергия, число импульсов, спектральные
+   показатели и SNR.
+18. `practice_07_pd_signal_diagnostics.csv` - истинные параметры генерации
+   сигналов и прямые диагностические метки. Эти столбцы используются только
+   для интерпретации и антипримера утечки.
+19. `practice_07_pd_signal_waveforms.csv` - длинная таблица отсчетов
+   временных сигналов. Одна строка соответствует одному отсчету одного окна.
+20. `practice_08_power_flow_scenarios.csv` - входные сценарии нагрузки и
+   генерации для 6-узловой сети 110 кВ.
+21. `practice_08_power_flow_features.csv` - сводные результаты AC power flow:
+   минимальное напряжение, максимальная загрузка линии, потери и критический
+   элемент.
+22. `practice_08_power_flow_diagnostics.csv` - детальные напряжения шин,
+   углы и загрузки линий для интерпретации режима.
+23. `practice_09_power_flow_comparison_features.csv` - безопасные признаки
+   сценария и целевые AC-показатели для суррогатной модели.
+24. `practice_09_power_flow_comparison_diagnostics.csv` - детальное сравнение
+   AC- и DC-перетоков, ошибки и расчетные величины, которые нельзя включать
+   во входы суррогатной модели.
+25. `practice_09_power_flow_comparison.csv` - полная таблица для
+   преподавательской диагностики и обратной совместимости.
+26. `practice_07_09_dataset_catalog.csv` и
+   `practice_07_09_dataset_assignments.csv` - реестр источников и
+   методические задания для расширения занятий 7-9.
 
 ## Важное различие распределений КПД
 
@@ -141,3 +171,20 @@ diagnostics-CSV и присоединяются в блокнотах тольк
    https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset.
    Набор пригоден для сравнения учебной кластеризации режимов с задачами
    предиктивного обслуживания и диагностики отказов.
+
+## Открытые источники для расширения занятий 7-9
+
+Для занятий 7-9 внешние источники используются как методические задания без
+обязательной загрузки больших архивов:
+
+1. Mendeley Data `Partial Discharge Signals in Insulated Power Cables with
+   Time-of-Arrival Annotations` -
+   https://data.mendeley.com/datasets/3mdgxv6zt7.
+2. Zenodo `Dataset for New Synthetic Partial Discharge Calibrator` -
+   https://zenodo.org/records/8436197.
+3. pandapower IEEE test networks -
+   https://pandapower.readthedocs.io/en/latest/networks/power_system_test_cases.html.
+4. IEEE PES Distribution Test Feeders -
+   https://cmte.ieee.org/pes-testfeeders/.
+5. MATPOWER case archive -
+   https://matpower.org/docs/ref/matpower6.0/menu6.0.html.
