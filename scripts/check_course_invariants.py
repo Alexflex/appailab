@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import sys
 
 import nbformat
 import numpy as np
@@ -25,6 +26,9 @@ NOTEBOOKS_EXTERNAL_STUDENT = PROJECT_ROOT / "notebooks" / "external" / "student"
 NOTEBOOKS_EXTERNAL_TEACHER = PROJECT_ROOT / "notebooks" / "external" / "teacher"
 SLIDES_DIR = PROJECT_ROOT / "docs" / "slides"
 TEACHER_GUIDES_DIR = PROJECT_ROOT / "docs" / "teacher_guides"
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 
 REGRESSION_STRICT_FEATURES = {
@@ -255,6 +259,12 @@ def _check_practice_07() -> None:
     assert not forbidden.intersection(features.columns), (
         f"В feature-CSV занятия 7 попали диагностические столбцы: {sorted(forbidden.intersection(features.columns))}"
     )
+    assert "threshold_crossing_count" in features.columns, (
+        "В feature-CSV занятия 7 отсутствует число пороговых превышений threshold_crossing_count."
+    )
+    assert "pulse_count_est" not in features.columns, (
+        "Устаревшее имя pulse_count_est не должно использоваться: это не истинное число импульсов."
+    )
     assert set(features["condition_class"]) == {
         "normal",
         "rare_pd",
@@ -269,10 +279,13 @@ def _check_practice_07() -> None:
 
 
 def _check_practice_08() -> None:
+    from appai_lab import create_power_flow_network
+
     features = _read_csv("practice_08_power_flow_features.csv")
     diagnostics = _read_csv("practice_08_power_flow_diagnostics.csv")
     scenarios = _read_csv("practice_08_power_flow_scenarios.csv")
 
+    assert callable(create_power_flow_network), "Публичный API create_power_flow_network недоступен."
     assert features.shape == (120, 11), f"Неожиданный размер feature-CSV занятия 8: {features.shape}"
     assert diagnostics.shape == (120, 29), f"Неожиданный размер diagnostics-CSV занятия 8: {diagnostics.shape}"
     assert scenarios.shape == (120, 13), f"Неожиданный размер scenarios-CSV занятия 8: {scenarios.shape}"
@@ -390,7 +403,14 @@ def _check_student_notebooks_clear_outputs() -> None:
                     f"В студенческом блокноте {path.name} нет обязательного фрагмента: {fragment}"
                 )
         if path.name.startswith("07_"):
-            for fragment in ["FFT", "signal_energy", "snr_db", "ConfusionMatrixDisplay", "state_code"]:
+            for fragment in [
+                "FFT",
+                "signal_energy",
+                "threshold_crossing_count",
+                "snr_db",
+                "ConfusionMatrixDisplay",
+                "state_code",
+            ]:
                 assert fragment in notebook_source, f"В занятии 7 нет обязательного блока: {fragment}"
         if path.name.startswith("08_"):
             for fragment in ["pandapower", "runpp", "load_multiplier", "слабый узел", "критическая линия"]:

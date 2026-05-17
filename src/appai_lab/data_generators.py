@@ -699,6 +699,11 @@ def generate_pd_signal_analysis_dataset(
     сохраняются две формы представления: длинная таблица отсчетов сигнала и
     компактная таблица признаков. Такой формат позволяет студенту увидеть
     переход от временного сигнала к признаковому описанию.
+
+    Признак threshold_crossing_count является числом отсчетов, превысивших
+    адаптивный порог, а не истинным числом физических импульсов. Истинное
+    число смоделированных импульсов хранится только в diagnostics-CSV и не
+    используется как входной признак классификатора.
     """
 
     rng = np.random.default_rng(random_state)
@@ -744,17 +749,22 @@ def generate_pd_signal_analysis_dataset(
             frequencies_hz = np.fft.rfftfreq(n_points, d=dt_s)
             spectrum = np.abs(fft_values)
             spectrum[0] = 0.0
+            spectrum_power = spectrum**2
             dominant_index = int(np.argmax(spectrum))
             dominant_freq_khz = frequencies_hz[dominant_index] / 1_000.0
             spectral_centroid_khz = float(
-                np.sum(frequencies_hz * spectrum) / max(np.sum(spectrum), 1e-12) / 1_000.0
+                np.sum(frequencies_hz * spectrum_power) / max(np.sum(spectrum_power), 1e-12) / 1_000.0
             )
             energy = float(np.sum(signal**2) * dt_s)
             rms = float(np.sqrt(np.mean(signal**2)))
             max_abs = float(np.max(np.abs(signal)))
             threshold = max(0.08, 4.0 * noise_std)
-            pulse_count_est = int(np.sum(np.abs(signal) > threshold))
+            threshold_crossing_count = int(np.sum(np.abs(signal) > threshold))
             noise_power = noise_std**2
+            # При коротком шумном окне оценка мощности полезной компоненты
+            # может стать отрицательной после вычитания шума. Нижняя граница
+            # предотвращает неопределенный логарифм и соответствует очень
+            # низкому отношению сигнал-шум.
             signal_power = max(float(np.mean(signal**2)) - noise_power, 1e-12)
             snr_db = float(10.0 * np.log10(signal_power / max(noise_power, 1e-12)))
 
@@ -767,7 +777,7 @@ def generate_pd_signal_analysis_dataset(
                     "max_abs_voltage_v": max_abs,
                     "rms_voltage_v": rms,
                     "signal_energy": energy,
-                    "pulse_count_est": pulse_count_est,
+                    "threshold_crossing_count": threshold_crossing_count,
                     "dominant_freq_khz": dominant_freq_khz,
                     "spectral_centroid_khz": spectral_centroid_khz,
                     "snr_db": snr_db,
@@ -818,7 +828,7 @@ def generate_pd_signal_analysis_dataset(
     )
 
 
-def _create_power_flow_network(scenario: dict[str, float]):
+def create_power_flow_network(scenario: dict[str, float]):
     """Создать 6-узловую учебную сеть pandapower для одного сценария."""
 
     try:
@@ -879,7 +889,7 @@ def _run_power_flow_scenario(scenario: dict[str, float]) -> dict[str, float | in
     import pandapower as pp
 
     logging.getLogger("pandapower").setLevel(logging.ERROR)
-    net = _create_power_flow_network(scenario)
+    net = create_power_flow_network(scenario)
     pp.runpp(net, algorithm="nr", init="flat", numba=False)
     ac_bus_vm = net.res_bus["vm_pu"].to_numpy()
     ac_bus_va = net.res_bus["va_degree"].to_numpy()
@@ -887,7 +897,7 @@ def _run_power_flow_scenario(scenario: dict[str, float]) -> dict[str, float | in
     ac_line_loading = net.res_line["loading_percent"].to_numpy()
     ac_losses_mw = float(net.res_line["pl_mw"].sum())
 
-    net_dc = _create_power_flow_network(scenario)
+    net_dc = create_power_flow_network(scenario)
     pp.rundcpp(net_dc, numba=False)
     dc_line_p = net_dc.res_line["p_from_mw"].to_numpy()
     dc_line_loading = net_dc.res_line["loading_percent"].to_numpy()
@@ -905,8 +915,11 @@ def _run_power_flow_scenario(scenario: dict[str, float]) -> dict[str, float | in
         "critical_line": int(np.argmax(ac_line_loading) + 1),
         "mean_abs_line_error_mw": float(line_abs_error.mean()),
         "max_abs_line_error_mw": float(line_abs_error.max()),
+        # Для почти нулевых перетоков относительная ошибка теряет физический
+        # смысл и становится численно неустойчивой. В учебной метрике
+        # используется инженерный нижний масштаб 1 МВт.
         "mean_relative_line_error_percent": float(
-            100.0 * np.mean(line_abs_error / np.maximum(np.abs(ac_line_p), 1e-6))
+            100.0 * np.mean(line_abs_error / np.maximum(np.abs(ac_line_p), 1.0))
         ),
     }
     for index, value in enumerate(ac_bus_vm):
@@ -2043,7 +2056,7 @@ def dataset_catalog_07_09() -> pd.DataFrame:
             "size_note": "архив сигналов и аннотаций; для аудиторной работы требуется подмножество",
             "format_note": "временные ряды и таблицы аннотаций",
             "lessons": "7",
-            "base_usage": "переход от временных отсчетов к признакам: амплитуда, энергия, число импульсов, SNR и спектр",
+            "base_usage": "переход от временных отсчетов к признакам: амплитуда, энергия, число пороговых превышений, SNR и спектр",
             "risk_level": "средний",
             "risk_note": "аннотации времени прихода нельзя использовать как обычные признаки без обсуждения утечки",
             "implementation_status": "methodology_only",
@@ -2134,7 +2147,7 @@ def dataset_assignments_07_09() -> pd.DataFrame:
                 )
                 practice = (
                     "Выберите 20-50 окон сигналов, рассчитайте максимум, RMS, "
-                    "энергию, число импульсов, доминирующую частоту и SNR. "
+                    "энергию, число пороговых превышений, доминирующую частоту и SNR. "
                     "Отдельно укажите, какие аннотации являются диагностическими."
                 )
                 visuals = "временной сигнал; спектр; таблица признаков; матрица ошибок классификатора"
@@ -2606,7 +2619,7 @@ diagnosis и Mendeley Data `Processed Data for EV Powertrain Efficiency`.
    открытому источнику: постановка, риски утечки, рекомендуемые
    визуализации и критерии успешного выполнения.
 17. `practice_07_pd_signal_features.csv` - признаки окон сигналов частичных
-   разрядов: амплитуда, RMS, энергия, число импульсов, спектральные
+   разрядов: амплитуда, RMS, энергия, число пороговых превышений, спектральные
    показатели и SNR.
 18. `practice_07_pd_signal_diagnostics.csv` - истинные параметры генерации
    сигналов и прямые диагностические метки. Эти столбцы используются только

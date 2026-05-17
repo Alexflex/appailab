@@ -257,7 +257,14 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
 
             где `x_i` - отсчет сигнала, `Delta t` - шаг дискретизации. Отношение
             сигнал-шум (Signal-to-Noise Ratio, SNR) показывает, насколько
-            полезный сигнал превышает уровень шума.
+            полезный сигнал превышает уровень шума. В коротких окнах оценка
+            полезной мощности может быть близка к нулю, поэтому при вычислении
+            SNR используется нижняя численная граница, предотвращающая
+            неопределенный логарифм.
+
+            Число пороговых превышений `threshold_crossing_count` не равно
+            истинному числу частичных разрядов. Это простой вычислимый признак,
+            показывающий, сколько отсчетов окна превысили адаптивный порог.
             """
         ),
         md(
@@ -292,7 +299,9 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
             строка waveforms-CSV соответствует одному отсчету одного окна. Целевая
             переменная `condition_class` задает учебное состояние: нормальный
             сигнал, редкие разряды, частые разряды, шумовой режим или внешняя
-            помеха.
+            помеха. Признак `threshold_crossing_count` означает число отсчетов,
+            превысивших адаптивный порог; это прокси-показатель импульсной
+            активности, а не истинное число физических импульсов.
             """
         ),
         code(
@@ -301,7 +310,7 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
                 n=("sample_id", "count"),
                 mean_energy=("signal_energy", "mean"),
                 mean_snr=("snr_db", "mean"),
-                mean_pulses=("pulse_count_est", "mean"),
+                mean_threshold_crossings=("threshold_crossing_count", "mean"),
             ).round(4))
             """
         ),
@@ -338,7 +347,9 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
 
             Спектр помогает отделить импульсные события от гармонической внешней
             помехи. Внешняя помеха может иметь выраженный частотный пик, тогда
-            как импульсный разряд распределяет энергию шире.
+            как импульсный разряд распределяет энергию шире. Спектральный
+            центроид в CSV рассчитан по мощности спектра, то есть по весам
+            `|FFT|^2`.
             """
         ),
         code(
@@ -379,7 +390,7 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
                     "max_abs_voltage_v",
                     "rms_voltage_v",
                     "signal_energy",
-                    "pulse_count_est",
+                    "threshold_crossing_count",
                     "dominant_freq_khz",
                     "spectral_centroid_khz",
                     "snr_db",
@@ -496,6 +507,7 @@ def build_practice_07(teacher: bool) -> list[nbformat.NotebookNode]:
             leakage_model.fit(X_train_l, y_train_l)
             leakage_pred = leakage_model.predict(X_test_l)
             print("Запрещенный результат с утечкой, Macro-F1:", round(f1_score(y_test_l, leakage_pred, average="macro"), 4))
+            del leakage_model, leakage_pred, X_leak, y_leak, X_train_l, X_test_l, y_train_l, y_test_l
             """
         ),
         code(
@@ -621,11 +633,11 @@ def build_practice_08(teacher: bool) -> list[nbformat.NotebookNode]:
         ),
         code(
             """
-            from appai_lab.data_generators import _create_power_flow_network
+            from appai_lab.data_generators import create_power_flow_network
             import pandapower as pp
 
             base_scenario = scenarios_df.iloc[0].to_dict()
-            net = _create_power_flow_network(base_scenario)
+            net = create_power_flow_network(base_scenario)
             pp.runpp(net, algorithm="nr", init="flat", numba=False)
             display(net.bus[["name", "vn_kv"]])
             display(net.res_bus[["vm_pu", "va_degree"]].round(4))
@@ -689,7 +701,7 @@ def build_practice_08(teacher: bool) -> list[nbformat.NotebookNode]:
                 changed[f"load_bus_{bus}_mw"] *= load_multiplier
                 changed[f"load_bus_{bus}_mvar"] *= load_multiplier
 
-            changed_net = _create_power_flow_network(changed)
+            changed_net = create_power_flow_network(changed)
             pp.runpp(changed_net, algorithm="nr", init="flat", numba=False)
 
             comparison = pd.DataFrame({
@@ -830,7 +842,9 @@ def build_practice_09(teacher: bool) -> list[nbformat.NotebookNode]:
 
             На графике каждая точка соответствует одной линии одного сценария.
             Чем ближе точка к диагонали, тем меньше расхождение между
-            нелинейным AC-расчетом и линейным DC-приближением.
+            нелинейным AC-расчетом и линейным DC-приближением. Относительная
+            ошибка в CSV считается с нижним масштабом 1 MW, поскольку при
+            почти нулевом перетоке процентная ошибка теряет инженерный смысл.
             """
         ),
         code(
@@ -1000,6 +1014,7 @@ def build_practice_09(teacher: bool) -> list[nbformat.NotebookNode]:
             leakage_model.fit(X_train_l, y_train_l)
             leakage_pred = leakage_model.predict(X_test_l)
             print("Запрещенный R2 с AC-утечкой:", round(r2_score(y_test_l, leakage_pred), 4))
+            del leakage_model, leakage_pred, X_leak, y_leak, X_train_l, X_test_l, y_train_l, y_test_l
             """
         ),
         code(

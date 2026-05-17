@@ -2,6 +2,7 @@
 
 from .data_generators import (
     RANDOM_SEED,
+    create_power_flow_network,
     create_all_datasets,
     generate_drive_mode_classification,
     generate_equipment_modes_dataset,
@@ -14,6 +15,7 @@ from .data_generators import (
 
 __all__ = [
     "RANDOM_SEED",
+    "create_power_flow_network",
     "create_all_datasets",
     "generate_drive_mode_classification",
     "generate_equipment_modes_dataset",
